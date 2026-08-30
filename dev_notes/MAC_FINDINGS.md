@@ -1,7 +1,8 @@
 # Mac findings (verified, not inferred)
 
 Source: `stickies_verify_20260830-140919.log`, `-142131.log`, `-143623.log`,
-`-144310.log`; macOS with Python 3.12.13, run from VS Code's embedded terminal. Each item below replaces an
+`-144310.log`, `-144917.log` (a 4-minute annotated session); macOS with
+Python 3.12.13, run from VS Code's embedded terminal. Each item below replaces an
 assumption in the handoff §4 or in Phase 1 code.
 
 ## Permissions
@@ -45,52 +46,68 @@ assumption in the handoff §4 or in Phase 1 code.
   matter). One calibration point so far: yellow = `#fef49c`, hue 54°.
 - Order comes from `ZOrder`.
 
-## Live-write behavior (partial)
+## Live-write behavior (verified, five runs)
 
-Observed for **note creation** (second log, step 4):
+**Creation.** A new note appears as a flat `.rtfd` *file* and becomes a
+package directory (`<uuid>.rtfd/TXT.rtf`) on its first content save -
+observed 3 s, 5 s and 12 s later, so "until first save", not a fixed
+delay. A note created and closed at once shows as a flat file that
+appears and vanishes without ever becoming a package. 16 notes created in
+3 s (Cmd-N with key repeat, apparently) all became packages in one batch
+6 s later.
 
-    14:21:49  CREATED  <uuid>.rtfd            <- a FLAT FILE, not a directory
-    14:21:54  CREATED  <uuid>.rtfd/TXT.rtf    <- package directory appears
-    14:21:54  DELETED  <uuid>.rtfd            <- the flat file is gone
-    14:21:54  CHANGED  .SavedStickiesState   REPLACED (temp-and-rename)
+**Attribute changes save the package.** One note was replaced at +0, +9,
++27, +35 s during continuous fiddling with its colour, position,
+collapsed/expanded state and focus - no typing. So recolouring, moving
+and collapsing all rewrite `TXT.rtf` (content unchanged) within seconds,
+not just the state file. Every save is `TXT.rtf` **replaced** (new
+inode), the package directory's mtime touched, and `.SavedStickiesState`
+rewritten. Once the replace was caught mid-flight as `TXT.rtf` DELETED
+then CREATED 0.5 s later - the file briefly does not exist during a save.
 
-- A new note is born as a flat `.rtfd` file (an NSFileWrapper flat
-  serialization) and becomes a real package ~5 s later on first content
-  save. `enumerate_notes()` skips non-directories with a log line; Phase 2's
-  watcher must treat a flat-file create as "not a note yet" and wait for
-  the directory. Settle logic on the package covers this naturally (a file
-  has no `TXT.rtf` inside; the signature changes when the dir lands).
-- `.SavedStickiesState` is rewritten by temp-and-rename on every save.
-  Phase 2 should never react to it directly beyond a debounced colour
-  refresh; the note's own package is the change signal.
-- Creation was reproduced twice more (third log): flat file, then the
-  package ~3 s later, state file replaced each time.
-- **Deletion** (third log): the package directory is removed immediately.
-  `.SavedStickiesState` was *not* rewritten within the following 13 s - a
-  later step still listed the deleted UUID. The container listing is the
-  truth for existence; the state file is only consulted for colour. The
-  parser already iterates packages, not state entries, so a stale entry is
-  harmless.
-- **Editing an existing note** (fourth log): captured at the Cmd-Q point of
-  the sequence, ~18 s after typing began and after a focus change:
+**Typing alone: cadence still unmeasured.** The only content save ever
+captured coincided with Cmd-Q (fourth log). Four short windows saw no
+flush from typing or a focus change. Whether an idle autosave timer
+exists for text is the one remaining behavioural unknown; see "Still
+open".
 
-      14:43:33  CHANGED  <uuid>.rtfd/TXT.rtf  REPLACED (new inode = temp-and-rename)
-      14:43:33  DIR-TOUCH <uuid>.rtfd
-      14:43:33  CHANGED  .SavedStickiesState  REPLACED
+**Closing is deleting.** Stickies has no close-but-keep: Cmd-W removes
+the note - silently when empty, after a confirmation when it has text.
+The 16-note burst was repeated Cmd-N, then Cmd-W on each blank note.
 
-  So `TXT.rtf` is **replaced, never rewritten in place**. Phase 2's watcher
-  must map `on_created`/`on_moved` *inside* a package to that note; an
-  `on_modified` on TXT.rtf will not come (handoff §3.4 anticipated this).
-  Also seen: the state file rewritten on mere activation of Stickies
-  (:15, before any edit) - more evidence it is noise as a trigger - and a
-  flat `.rtfd` that appeared and vanished 5 s later without ever becoming
-  a package (a note created and closed at once, presumably).
-- **When edits are saved is still unknown.** In four 25-second windows no
-  edit flushed on a timer or a focus change; the one capture coincided
-  with quit. Stale state-file entries were also only cleared then. Whether
-  a long autosave timer exists decides how "live" the mirror can be; the
-  annotated session mode of step 4 (`--steps 4 --watch-seconds 0`) is for
-  settling this: annotate "edit", then leave the note alone for 3-5 min.
+**Deletion** (= closing the window). The package directory is removed
+immediately. The state file is NOT updated for it - not on later rewrites
+for other reasons, not in any tolerable wait; observed to clear only on
+quit.
+
+**State file.** Rewritten by temp-and-rename on every save, on activation,
+and at times with no package activity at all. Since attribute changes
+also rewrite the package, it carries no signal the package does not.
+
+## Phase 2 watcher rules (derived from the above)
+
+1. **Existence = the `<uuid>.rtfd` directory.** A flat `.rtfd` file is
+   "not a note yet" - ignore until it becomes a directory. A missing
+   `TXT.rtf` inside an existing directory is "mid-save" - wait, do not
+   treat as deletion. Deletion is the directory itself vanishing.
+2. **Change signal = any event under `<uuid>.rtfd/`** (create, move,
+   delete of TXT.rtf or attachments) or the directory's mtime. Map it to
+   the uuid, then debounce per note. Do not expect `on_modified` on
+   TXT.rtf; it is replaced, not rewritten. Expect the stream to be noisy:
+   a move or collapse rewrites the package with identical text, so most
+   events end as `unchanged` after the byte-compare - count them, don't
+   suppress them, so the status line shows the watcher is alive.
+3. **Defaults fit the observed cadence:** `settle_seconds = 1` (the
+   delete-then-create gap was 0.5 s), `debounce_seconds = 3` (saves are
+   8+ s apart; an edit reaches the mirror ~10-15 s after the keystroke).
+4. **State file: never a trigger.** Re-read it (cheap, tolerant) as part
+   of handling a package event, so the colour written with that note is
+   current. A recolour rewrites the package anyway (verified), so no
+   separate state-file watch is needed. Never derive existence from it;
+   stale deleted entries persist until quit.
+5. **Batches are normal.** Sixteen creations in three seconds must not
+   produce sixteen concurrent conversions; a single worker draining a
+   per-uuid pending set, oldest first, is enough.
 
 ## Colour calibration (4 of 6)
 
@@ -127,10 +144,13 @@ variants of the same hue) - not used.
 
 ## Still open
 
-- [ ] **Save cadence** (step 4, open-ended): mechanics are known (replace).
-      Run `--steps 4 --watch-seconds 0`, annotate as you go, and cover: an
-      edit followed by 3-5 min idle; window close (not delete); recolour;
-      move; delete; quit and relaunch. The `+Ns` column gives the delay.
+- [x] **Write mechanics** (replace, not rewrite; attribute changes save the
+      package; close = delete) - settled.
+- [ ] **Typing autosave interval**: `--steps 4 --watch-seconds 0`, annotate
+      `typing`, type a sentence, then hands OFF everything - no clicking,
+      no focus change - for five minutes. A `REPLACED` line gives the
+      interval; none means text is saved only on quit/attribute change,
+      which caps how live the mirror can be for pure edits.
 - [ ] **Colour calibration**: purple and gray only (`--steps 6`).
 - [ ] **Bold/italic through textutil** (step 7 on a formatted note).
 - [ ] **TCC service name** for `tccutil reset` (see Permissions).

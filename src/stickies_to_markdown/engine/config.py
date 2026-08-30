@@ -81,8 +81,10 @@ class Config:
             "filename_style": "slug-uuid",          # or "uuid"
             "on_delete": "archive",                 # mark | delete | keep
             "deleted_dir": "_deleted",              # relative to output_dir, or absolute
-            "debounce_seconds": 3.0,                # per-note quiet time (watcher)
-            "settle_seconds": 1.0,                  # package stops changing
+            "debounce_seconds": 3.0,                # per-note quiet time; Stickies
+                                                    # autosaves 8+ s apart (verified)
+            "settle_seconds": 1.0,                  # package stops changing; the
+                                                    # mid-save gap seen was 0.5 s
             "include_attachments": True,
             "front_matter": True,
             "flavor": "generic",                    # or "obsidian"
