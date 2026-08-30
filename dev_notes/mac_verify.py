@@ -10,6 +10,7 @@ independent - a failure logs and moves on.
     python3 dev_notes/mac_verify.py                  # all applicable steps
     python3 dev_notes/mac_verify.py --steps 3,4      # just state keys + watch
     python3 dev_notes/mac_verify.py --steps 4 --watch-seconds 0   # annotated session
+    python3 dev_notes/mac_verify.py --steps 7 --package e5ff     # a specific note
     python3 dev_notes/mac_verify.py --capture ~/s2m_fixtures --capture-count 8
 
 Steps:
@@ -110,9 +111,16 @@ def step_1_container(log, args):
 
 # --- step 2 ----------------------------------------------------------------
 
+_PACKAGE_PREFIX = ""     # set from --package
+
+
 def _pick_package(container, prefer_attachment=True):
     packages = sorted(p for p in Path(container).iterdir()
                       if p.suffix == ".rtfd" and p.is_dir())
+    if _PACKAGE_PREFIX:
+        wanted = [p for p in packages
+                  if p.name.lower().startswith(_PACKAGE_PREFIX.lower())]
+        return wanted[0] if wanted else None
     if prefer_attachment:
         for pkg in packages:
             extras = [f for f in pkg.iterdir()
@@ -385,8 +393,7 @@ def step_7_converters(log, args):
     if pkg is None:
         log.finding("no packages to convert")
         return
-    log.line(f"Package: {pkg.name}  (to test a specific note, copy it and "
-             "the state file to a folder and pass --stickies-dir)")
+    log.line(f"Package: {pkg.name}  (choose another with --package <uuid prefix>)")
     for tier in ("textutil", "text"):
         try:
             markdown, attachments = convert(str(pkg), tier)
@@ -445,10 +452,15 @@ def main():
     parser.add_argument("--capture", metavar="DIR", default="",
                         help="step 8: stage fixture copies here")
     parser.add_argument("--capture-count", type=int, default=8)
+    parser.add_argument("--package", metavar="UUID_PREFIX", default="",
+                        help="steps 2/5/7: use the package whose UUID starts "
+                             "with this (e.g. e5ff) instead of auto-picking")
     parser.add_argument("--log", default="",
                         help="log path (default: ./stickies_verify_<ts>.log)")
     args = parser.parse_args()
     args.stickies_dir = os.path.expanduser(args.stickies_dir)
+    global _PACKAGE_PREFIX
+    _PACKAGE_PREFIX = args.package
 
     log_path = args.log or f"stickies_verify_{datetime.now():%Y%m%d-%H%M%S}.log"
     log = Log(log_path)

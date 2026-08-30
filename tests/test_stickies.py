@@ -35,6 +35,16 @@ def test_colors_from_state_file():
         return ok
 
 
+def test_classify_all_six_real_colors():
+    observed = {"yellow": (0.996, 0.957, 0.612), "blue": (0.678, 0.957, 1.0),
+                "green": (0.698, 1.0, 0.631), "pink": (1.0, 0.780, 0.780),
+                "purple": (0.714, 0.792, 1.0), "gray": (0.933, 0.933, 0.933)}
+    got = {name: stickies.classify_color(*rgb)[0] for name, rgb in observed.items()}
+    return check(all(got[k] == k for k in observed),
+                 "all six real StickyColor values classify to their names "
+                 "(blue 188deg and purple 224deg split)", f"{got}")
+
+
 def test_classify_real_yellow():
     # The one value observed on a real Mac (2026-08-30 log).
     name, hex_code = stickies.classify_color(0.996078431372549,
@@ -104,7 +114,7 @@ def test_container_probe():
 
 if __name__ == "__main__":
     tests = [test_enumerates_all_packages, test_colors_from_state_file,
-             test_classify_real_yellow,
+             test_classify_all_six_real_colors, test_classify_real_yellow,
              test_missing_state_file_is_fine, test_truncated_state_file_is_fine,
              test_non_note_entries_ignored, test_container_probe]
     exit(0 if run_suite("stickies container tests", tests) else 1)

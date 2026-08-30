@@ -13,9 +13,9 @@ SpineColor (each {Red, Green, Blue, Alpha} floats 0..1), Frame, ExpandedSize,
 ExpandFrameY, Floating, Translucent, ZOrder, SpellCheckingTypes.
 
 The colour is a float RGB, not an enum, so it is classified by hue into the
-classic palette names. The bands were calibrated on one real note (yellow);
+six palette names. All six bands are calibrated against real notes;
 dev_notes/mac_verify.py step 6 prints every note's hue/saturation and the
-guessed name so the other five can be confirmed and the bands adjusted.
+assigned name should Apple ever change the palette.
 
 Nothing in this module ever writes inside the container. The state file is
 read defensively: a missing or unparseable one must never block exporting
@@ -40,16 +40,18 @@ _UUID_RE = re.compile(
 COLOR_NAMES = ("yellow", "blue", "green", "pink", "purple", "gray")
 
 # Hue bands in degrees (colorsys hue * 360). Below GRAY_SATURATION the
-# colour is grey regardless of hue. Verified on a real Mac (2026-08-30):
-#   yellow #fef49c 54deg   blue #adf4ff 188deg   green #b2ffa1 109deg
-#   pink   #ffc7c7  0deg   (a pure red tint - hence the 0-20 band)
-# purple and gray are still hue-theory placements pending calibration.
+# colour is grey regardless of hue. All six calibrated on a real Mac
+# (2026-08-30):
+#   yellow #fef49c  54deg    green  #b2ffa1 109deg    blue #adf4ff 188deg
+#   purple #b6caff 224deg    pink   #ffc7c7   0deg    gray #eeeeee sat 0
+# Stickies' "purple" is a periwinkle, only 36deg from its blue, hence the
+# 206deg boundary. Pink is a pure red tint, hence the band around 0deg.
 GRAY_SATURATION = 0.12
 _HUE_BANDS = (
     (20, 75, "yellow"),
     (75, 170, "green"),
-    (170, 260, "blue"),
-    (260, 305, "purple"),
+    (170, 206, "blue"),
+    (206, 305, "purple"),
     (305, 360, "pink"),
     (0, 20, "pink"),
 )

@@ -1,8 +1,8 @@
 # Mac findings (verified, not inferred)
 
 Source: `stickies_verify_20260830-140919.log`, `-142131.log`, `-143623.log`,
-`-144310.log`, `-144917.log` (a 4-minute annotated session); macOS with
-Python 3.12.13, run from VS Code's embedded terminal. Each item below replaces an
+`-144310.log`, `-144917.log`, `-150158.log` (typing test), `-151147.log`
+(colours), `-151320.log`; macOS with Python 3.12.13, VS Code terminal. Each item below replaces an
 assumption in the handoff §4 or in Phase 1 code.
 
 ## Permissions
@@ -65,11 +65,14 @@ inode), the package directory's mtime touched, and `.SavedStickiesState`
 rewritten. Once the replace was caught mid-flight as `TXT.rtf` DELETED
 then CREATED 0.5 s later - the file briefly does not exist during a save.
 
-**Typing alone: cadence still unmeasured.** The only content save ever
-captured coincided with Cmd-Q (fourth log). Four short windows saw no
-flush from typing or a focus change. Whether an idle autosave timer
-exists for text is the one remaining behavioural unknown; see "Still
-open".
+**Typing alone: idle autosave ~10-12 s.** Hands-off test (sixth log): a
+note typed into and then left untouched was saved once, 12 s after its
+package appeared, and never again during minutes of idle. Together with
+the 8-18 s spacing of attribute-change saves this reads as a ~10 s
+debounce after the last change. So typed text reaches disk on its own;
+the mirror can promise "edits appear within about 15-20 s" (debounce +
+settle on top). One data point for pure typing - re-measure if a user
+reports otherwise.
 
 **Closing is deleting.** Stickies has no close-but-keep: Cmd-W removes
 the note - silently when empty, after a confirmation when it has text.
@@ -109,17 +112,19 @@ also rewrite the package, it carries no signal the package does not.
    produce sixteen concurrent conversions; a single worker draining a
    per-uuid pending set, oldest first, is enough.
 
-## Colour calibration (4 of 6)
+## Colour calibration (6 of 6)
 
     yellow  #fef49c  hue  54  sat 0.39
-    blue    #adf4ff  hue 188  sat 0.32
     green   #b2ffa1  hue 109  sat 0.37
+    blue    #adf4ff  hue 188  sat 0.32
+    purple  #b6caff  hue 224  sat 0.29   <- a periwinkle, not a violet
     pink    #ffc7c7  hue   0  sat 0.22   <- pure red tint; the 0-20 band
+    gray    #eeeeee  sat 0.00
 
-All four classify correctly with the current `_HUE_BANDS`. Purple and gray
-are unverified; make one note of each and re-run `--steps 6`. The state
-file also carries `ControlColor`, `HighlightColor`, `SpineColor` (darker
-variants of the same hue) - not used.
+Blue and purple are only 36 degrees apart; the band boundary is at 206.
+(Assumes note 45bdae71 in the colour log was the purple one - it appeared
+when a purple was requested.) The state file also carries `ControlColor`,
+`HighlightColor`, `SpineColor` (darker variants of the same hue) - unused.
 
 ## Conversion
 
@@ -146,13 +151,11 @@ variants of the same hue) - not used.
 
 - [x] **Write mechanics** (replace, not rewrite; attribute changes save the
       package; close = delete) - settled.
-- [ ] **Typing autosave interval**: `--steps 4 --watch-seconds 0`, annotate
-      `typing`, type a sentence, then hands OFF everything - no clicking,
-      no focus change - for five minutes. A `REPLACED` line gives the
-      interval; none means text is saved only on quit/attribute change,
-      which caps how live the mirror can be for pure edits.
-- [ ] **Colour calibration**: purple and gray only (`--steps 6`).
-- [ ] **Bold/italic through textutil** (step 7 on a formatted note).
+- [x] **Typing autosave interval** - ~10-12 s idle debounce (one run).
+- [x] **Colour calibration** - all six.
+- [ ] **Bold/italic through textutil**: `--steps 7 --package <prefix>` on
+      a note that has bold and italic text (the auto-pick keeps choosing
+      the attachment note).
 - [ ] **TCC service name** for `tccutil reset` (see Permissions).
 - [ ] **Real fixtures** (step 8 with `--capture`, then sanitise).
 
