@@ -1,7 +1,7 @@
 # Mac findings (verified, not inferred)
 
 Source: `stickies_verify_20260830-140919.log`, `-142131.log`, `-143623.log`,
-macOS with Python 3.12.13, run from VS Code's embedded terminal. Each item below replaces an
+`-144310.log`; macOS with Python 3.12.13, run from VS Code's embedded terminal. Each item below replaces an
 assumption in the handoff §4 or in Phase 1 code.
 
 ## Permissions
@@ -71,10 +71,26 @@ Observed for **note creation** (second log, step 4):
   truth for existence; the state file is only consulted for colour. The
   parser already iterates packages, not state entries, so a stale entry is
   harmless.
-- **Editing an existing note has not been captured in three runs.** Either
-  the sequence keeps producing new notes instead, or Stickies defers edits
-  to a longer timer / window close / quit. Step 4 now ends with Cmd-Q so
-  the write mechanics show regardless of the timer.
+- **Editing an existing note** (fourth log): captured at the Cmd-Q point of
+  the sequence, ~18 s after typing began and after a focus change:
+
+      14:43:33  CHANGED  <uuid>.rtfd/TXT.rtf  REPLACED (new inode = temp-and-rename)
+      14:43:33  DIR-TOUCH <uuid>.rtfd
+      14:43:33  CHANGED  .SavedStickiesState  REPLACED
+
+  So `TXT.rtf` is **replaced, never rewritten in place**. Phase 2's watcher
+  must map `on_created`/`on_moved` *inside* a package to that note; an
+  `on_modified` on TXT.rtf will not come (handoff §3.4 anticipated this).
+  Also seen: the state file rewritten on mere activation of Stickies
+  (:15, before any edit) - more evidence it is noise as a trigger - and a
+  flat `.rtfd` that appeared and vanished 5 s later without ever becoming
+  a package (a note created and closed at once, presumably).
+- **When edits are saved is still unknown.** In four 25-second windows no
+  edit flushed on a timer or a focus change; the one capture coincided
+  with quit. Stale state-file entries were also only cleared then. Whether
+  a long autosave timer exists decides how "live" the mirror can be; the
+  annotated session mode of step 4 (`--steps 4 --watch-seconds 0`) is for
+  settling this: annotate "edit", then leave the note alone for 3-5 min.
 
 ## Colour calibration (4 of 6)
 
@@ -111,10 +127,10 @@ variants of the same hue) - not used.
 
 ## Still open
 
-- [ ] **Existing-note edit pattern** (step 4): creation and deletion are
-      understood; editing is not. `--steps 4 --watch-seconds 45`, type into
-      an existing note, change focus, then Cmd-Q Stickies inside the window.
-      Need: `TXT.rtf` in-place vs replaced, and whether a timer fires.
+- [ ] **Save cadence** (step 4, open-ended): mechanics are known (replace).
+      Run `--steps 4 --watch-seconds 0`, annotate as you go, and cover: an
+      edit followed by 3-5 min idle; window close (not delete); recolour;
+      move; delete; quit and relaunch. The `+Ns` column gives the delay.
 - [ ] **Colour calibration**: purple and gray only (`--steps 6`).
 - [ ] **Bold/italic through textutil** (step 7 on a formatted note).
 - [ ] **TCC service name** for `tccutil reset` (see Permissions).

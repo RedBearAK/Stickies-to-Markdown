@@ -9,15 +9,16 @@ independent - a failure logs and moves on.
 
     python3 dev_notes/mac_verify.py                  # all applicable steps
     python3 dev_notes/mac_verify.py --steps 3,4      # just state keys + watch
-    python3 dev_notes/mac_verify.py --watch-seconds 45
+    python3 dev_notes/mac_verify.py --steps 4 --watch-seconds 0   # annotated session
     python3 dev_notes/mac_verify.py --capture ~/s2m_fixtures --capture-count 8
 
 Steps:
     1  container path, layout, FDA probe
     2  package anatomy (TXT.rtf, header, attachments)
     3  real .SavedStickiesState structure and key names
-    4  live-write behavior (edit notes while it watches; inode tracking
-       distinguishes in-place rewrite from temp-and-rename)
+    4  live-write behavior: an annotated observation session. Lines you
+       type are stamped into the log between filesystem events; inode
+       tracking distinguishes in-place rewrite from temp-and-rename
     5  textutil tier-2 output on a real package
     6  colour calibration: every note's StickyColor as hue/sat + the name
        the engine assigns, for checking the hue bands in stickies.py
@@ -217,56 +218,85 @@ def _tree_state(container):
 
 
 def step_4_watch(log, args):
-    log.section(f"4. Live-write behavior ({args.watch_seconds}s watch)")
-    if args.watch_seconds < 40:
-        log.line("    (tip: --watch-seconds 45 fits the whole sequence)")
-    log.line(">>> Creation and deletion patterns are KNOWN. Only edits are open.")
-    log.line(">>>   1. type a few words into an EXISTING note, wait 10 s")
-    log.line(">>>   2. click a DIFFERENT note (focus change), wait 5 s")
-    log.line(">>>   3. Cmd-Q Stickies - a quit forces the save, so the write")
-    log.line(">>>      mechanics show even if the timer never fired")
-    log.line(">>> Watching for changes...")
+    seconds = args.watch_seconds
+    title = "until you stop it" if seconds <= 0 else f"{seconds}s watch"
+    log.section(f"4. Live-write behavior ({title})")
+    log.line("  Anything you type here + Enter is stamped into the log as a NOTE,")
+    log.line("  interleaved with the filesystem events - narrate what you do.")
+    log.line("  Type q (or Ctrl-C) to finish." if seconds <= 0 else
+             "  (--watch-seconds 0 for an open-ended session)")
+    log.line("")
+    log.line("  Suggested session (annotate BEFORE each action):")
+    log.line("    edit: type into an existing note, then leave it alone 3+ min")
+    log.line("    focus: click another note / another app")
+    log.line("    close: close a note window (not delete)")
+    log.line("    move: drag a note; recolor: change a note's colour")
+    log.line("    delete: delete a note")
+    log.line("    quit: Cmd-Q Stickies, wait, relaunch")
+    log.line("  Watching...")
     container = args.stickies_dir
     before = _tree_state(container)
-    deadline = time.time() + args.watch_seconds
+    deadline = None if seconds <= 0 else time.time() + seconds
+    last_mark = time.time()
     seen = 0
-    while time.time() < deadline:
-        time.sleep(0.2)
-        after = _tree_state(container)
-        stamp = time.strftime("%H:%M:%S")
-        for path in after.keys() - before.keys():
-            kind = "DIR " if after[path][3] else "FILE"
-            log.line(f"  {stamp}  CREATED {kind} {os.path.relpath(path, container)}")
-            seen += 1
-        for path in before.keys() - after.keys():
-            kind = "DIR " if before[path][3] else "FILE"
-            log.line(f"  {stamp}  DELETED {kind} {os.path.relpath(path, container)}")
-            seen += 1
-        for path in after.keys() & before.keys():
-            if before[path][:3] != after[path][:3]:
-                rel = os.path.relpath(path, container)
-                if before[path][3] != after[path][3]:
-                    log.line(f"  {stamp}  BECAME {'DIR' if after[path][3] else 'FILE'} {rel}")
-                    continue
-                if after[path][3]:          # directory mtime = entry churn
-                    log.line(f"  {stamp}  DIR-TOUCH {rel}")
-                    continue
-                same_inode = before[path][0] == after[path][0]
-                how = "IN-PLACE (same inode)" if same_inode \
-                    else "REPLACED (new inode = temp-and-rename)"
-                log.line(f"  {stamp}  CHANGED  {rel}  {how}")
+    stdin_open = True
+
+    def stamp():
+        return f"{time.strftime('%H:%M:%S')} +{time.time() - last_mark:5.1f}s"
+
+    try:
+        while deadline is None or time.time() < deadline:
+            if stdin_open and _stdin_ready(0.2):
+                line = sys.stdin.readline()
+                if not line:
+                    stdin_open = False
+                elif line.strip().lower() == "q":
+                    break
+                elif line.strip():
+                    last_mark = time.time()
+                    log.line(f"  {time.strftime('%H:%M:%S')}  NOTE: {line.strip()}")
+                continue
+            if not stdin_open:
+                time.sleep(0.2)
+            after = _tree_state(container)
+            for path in after.keys() - before.keys():
+                kind = "DIR " if after[path][3] else "FILE"
+                log.line(f"  {stamp()}  CREATED {kind} {os.path.relpath(path, container)}")
                 seen += 1
-        before = after
-    if seen == 0:
-        log.finding("no changes observed - Stickies may write only on its own "
-                    "autosave timer, on window close, or on quit. Re-run: "
-                    "--steps 4 --watch-seconds 90, type continuously, then "
-                    "close the note's window, then Quit Stickies, all inside "
-                    "the window")
-    else:
-        log.finding(f"{seen} change events; read the CHANGED lines above: "
-                    "in-place vs replaced decides the Phase 2 event mapping, "
-                    "and .SavedStickiesState churn shows the state-write habit")
+            for path in before.keys() - after.keys():
+                kind = "DIR " if before[path][3] else "FILE"
+                log.line(f"  {stamp()}  DELETED {kind} {os.path.relpath(path, container)}")
+                seen += 1
+            for path in after.keys() & before.keys():
+                if before[path][:3] != after[path][:3]:
+                    rel = os.path.relpath(path, container)
+                    if before[path][3] != after[path][3]:
+                        log.line(f"  {stamp()}  BECAME {'DIR' if after[path][3] else 'FILE'} {rel}")
+                    elif after[path][3]:
+                        log.line(f"  {stamp()}  DIR-TOUCH {rel}")
+                    else:
+                        same = before[path][0] == after[path][0]
+                        how = ("IN-PLACE (same inode)" if same
+                               else "REPLACED (new inode = temp-and-rename)")
+                        log.line(f"  {stamp()}  CHANGED  {rel}  {how}")
+                    seen += 1
+            before = after
+    except KeyboardInterrupt:
+        log.line("  (stopped)")
+    log.finding(f"{seen} filesystem events; the +Ns column is time since your "
+                "last NOTE, so a CHANGED line's offset from 'edit' is the save "
+                "delay (or its absence is the answer)")
+
+
+def _stdin_ready(timeout):
+    """True when a line is waiting on stdin (POSIX select; never blocks)."""
+    try:
+        import select
+        ready, _, _ = select.select([sys.stdin], [], [], timeout)
+        return bool(ready)
+    except (OSError, ValueError, ImportError):
+        time.sleep(timeout)
+        return False
 
 
 # --- step 5 ----------------------------------------------------------------
@@ -411,7 +441,7 @@ def main():
     parser.add_argument("--steps", default="",
                         help="comma-separated step numbers (default: all)")
     parser.add_argument("--watch-seconds", type=int, default=25,
-                        help="step 4 observation window")
+                        help="step 4 window; 0 = open-ended until q/Ctrl-C")
     parser.add_argument("--capture", metavar="DIR", default="",
                         help="step 8: stage fixture copies here")
     parser.add_argument("--capture-count", type=int, default=8)
