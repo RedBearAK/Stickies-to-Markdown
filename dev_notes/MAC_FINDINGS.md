@@ -2,7 +2,8 @@
 
 Source: `stickies_verify_20260830-140919.log`, `-142131.log`, `-143623.log`,
 `-144310.log`, `-144917.log`, `-150158.log` (typing test), `-151147.log`
-(colours), `-151320.log`; macOS with Python 3.12.13, VS Code terminal. Each item below replaces an
+(colours), `-151320.log`, `-152249.log` (all-package converter check);
+macOS with Python 3.12.13, VS Code terminal. Each item below replaces an
 assumption in the handoff §4 or in Phase 1 code.
 
 ## Permissions
@@ -144,8 +145,19 @@ when a purple was requested.) The state file also carries `ControlColor`,
 - Tier "text" (stdlib RTF) produced clean output on a 4.7 KB real note.
 - After the walker rewrite, **textutil output matches the text tier
   byte-for-byte** on that note (second log), plus the attachment marker
-  placed inline where the image sits rather than appended. Bold/italic
-  still unexercised - that note has none.
+  placed inline where the image sits rather than appended.
+- **Bold and italic survive textutil** as `**`/`*` (all-package check:
+  a note with both, and a bold heading in another). Both tiers converted
+  all 10 real packages. Sizes differ by a few percent on some notes
+  (text tier longer) - most likely tabs/trailing whitespace handling; not
+  investigated, cosmetic.
+- **Note text needs Markdown escaping** - found by the same check: Excel
+  formulas containing `"*U*"` and `$A$5` would render as italics and, in
+  Obsidian, inline math. Both tiers now backslash-escape `* _ \` $ < [ ]`
+  and line-start `# > - +` in plain text (converter-generated markup is
+  added after escaping, so real emphasis and lists are unaffected).
+  Consequence for existing mirrors: every file rewrites once on the next
+  export, since the body (and its hash) changes.
 
 ## Still open
 
@@ -153,9 +165,7 @@ when a purple was requested.) The state file also carries `ControlColor`,
       package; close = delete) - settled.
 - [x] **Typing autosave interval** - ~10-12 s idle debounce (one run).
 - [x] **Colour calibration** - all six.
-- [ ] **Bold/italic through textutil**: `--steps 7 --package <prefix>` on
-      a note that has bold and italic text (the auto-pick keeps choosing
-      the attachment note).
+- [x] **Bold/italic through textutil** - verified.
 - [ ] **TCC service name** for `tccutil reset` (see Permissions).
 - [ ] **Real fixtures** (step 8 with `--capture`, then sanitise).
 

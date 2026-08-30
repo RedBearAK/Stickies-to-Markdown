@@ -389,7 +389,7 @@ def step_7_converters(log, args):
         return
 
     import re
-    emphasis = re.compile(r"\*\*[^*\n]+\*\*|(?<![*\w])\*[^*\n]+\*(?![*\w])")
+    emphasis = re.compile(r"(?<!\\)\*\*[^*\n]+\*\*|(?<![\\*\w])\*[^*\\\n]+\*(?![*\w])")
     styled = []
     failures = []
     log.line(f"  {'uuid8':<9} {'textutil':>9} {'text':>7}  emphasis  first line")

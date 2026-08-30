@@ -4,7 +4,7 @@
 from _helpers import FIXTURES, check, run_suite
 
 from stickies_to_markdown.engine.convert import (
-    rtf_to_text, html_to_markdown, convert, list_attachments)
+    rtf_to_text, html_to_markdown, convert, list_attachments, escape_markdown)
 
 
 def test_paragraphs_and_escapes():
@@ -134,12 +134,47 @@ def test_cocoa_html_writer_shape():
     return ok
 
 
+def test_markdown_punctuation_escaped():
+    """Real case (2026-08-30): Excel formulas in notes render as italics/math."""
+    formula = '=SUMIF($A$5:$A$57,"*U*",C5:C57)'
+    escaped = escape_markdown(formula)
+    ok = check(escaped == '=SUMIF(\\$A\\$5:\\$A\\$57,"\\*U\\*",C5:C57)',
+               "asterisks and dollars escaped in plain text", escaped)
+    cases = {
+        "# not a heading": "\\# not a heading",
+        "> nor a quote": "\\> nor a quote",
+        "- not a bullet": "\\- not a bullet",
+        "2024. not a list": "\\2024. not a list",
+        "title\n-----": "title\n\\-----",          # setext / rule
+        "title\n===": "title\n\\=\\==",
+        "    indented": "\u00a0\u00a0\u00a0\u00a0indented",   # not a code block
+        "\tindented": "\u00a0\u00a0\u00a0\u00a0indented",
+        "see #todo and issue #42": "see \\#todo and issue #42",
+        "a < b and <b>": "a < b and \\<b>",
+        "AT&T and &copy;": "AT&T and \\&copy;",
+        "==hi== ~~x~~ %%hidden%% 50% ~5": "\\==hi\\== \\~~x\\~~ \\%%hidden\\%% 50% ~5",
+        "my_var and _word_": "my_var and \\_word\\_",
+        "[[wiki]] and [x](y)": "\\[\\[wiki\\]\\] and \\[x\\](y)",
+    }
+    for raw, want in cases.items():
+        got = escape_markdown(raw)
+        ok &= check(got == want, f"escape: {raw!r}", f"{raw!r} -> {got!r} (want {want!r})")
+    html_text = ('<html><body><p>=SUMIF("*Total*",K14)</p>'
+                 '<p><b>Bold</b> and <i>Italic</i></p><ul><li>plain item</li></ul>'
+                 '</body></html>')
+    markdown = html_to_markdown(html_text)
+    ok &= check('"\\*Total\\*"' in markdown and "**Bold**" in markdown
+                and "*Italic*" in markdown and "- plain item" in markdown,
+                "textutil tier escapes data but keeps real emphasis/list markup",
+                f"{markdown!r}")
+    return ok
+
 if __name__ == "__main__":
     tests = [test_paragraphs_and_escapes, test_destinations_skipped,
              test_unicode_and_emoji, test_empty_note_is_empty,
              test_convert_entry_point_falls_through,
              test_list_attachments_ignores_rtf_and_hidden, test_html_walker,
-             test_cocoa_html_writer_shape]
+             test_cocoa_html_writer_shape, test_markdown_punctuation_escaped]
     exit(0 if run_suite("conversion tests", tests) else 1)
 
 

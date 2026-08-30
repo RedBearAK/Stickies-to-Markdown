@@ -100,6 +100,9 @@ linked from the body.
 | `filename_style` | `slug-uuid` | or `uuid` |
 | `on_delete` | `archive` | `mark` / `delete` / `keep` — see below |
 | `deleted_dir` | `_deleted` | archive folder; relative to `output_dir` or absolute |
+| `exclude_colors` | `[]` | colours to keep out of the mirror |
+| `exclude_title_regex` | *(none)* | first-line pattern to keep out |
+| `on_exclude` | `delete` | policy for a note that becomes excluded |
 | `read_only_output` | `true` | chmod 444 mirror files |
 | `include_attachments` | `true` | copy package attachments |
 
@@ -114,6 +117,34 @@ linked from the body.
 
 A *retitled* note is not a deletion: its old filename is removed and the
 content continues under the new name, whatever `on_delete` says.
+Attachments follow the file: archived alongside it, or removed with it.
+
+### Keeping some notes out of the mirror
+
+```
+stickies2md --set exclude_colors=gray          # "gray means private"
+stickies2md --set exclude_title_regex='^#private\b'
+stickies2md --set on_exclude=delete            # archive | mark | delete | keep
+```
+
+Exclusion is **reactive**: a note that matches is treated as if it had
+been deleted, per `on_exclude` (default `delete`). That matters for
+timing. Stickies autosaves a new note about ten seconds after you stop
+typing, so a marker typed *after* the content means the note is mirrored
+briefly and then removed - and a sync client may have seen it. Colour is
+the attribute that avoids this: set it on the empty note first, then
+type. Excluded notes are never converted, so their text never leaves the
+Stickies container.
+
+### Note text is shown as written
+
+Plain text in a note is escaped so a Markdown renderer displays it
+literally: `*U*` stays asterisks rather than italics, `$A$5` stays a
+cell reference rather than Obsidian math, a line of `-----` stays a line
+rather than turning the line above into a heading, indented lines keep
+their indent rather than becoming code blocks, and `#word` does not
+become a vault tag. Only the converter's own output (bold/italic from
+Stickies formatting, real lists, attachment links) is live Markdown.
 
 Config lives at `~/Library/Application Support/StickiesToMarkdown/` (macOS)
 or `~/.config/stickies-to-markdown/` (Linux), JSON, hot-reload-friendly.

@@ -160,6 +160,7 @@ class Writer:
         self.dry_run = bool(config.get("dry_run"))
         self.read_only = bool(config.get("read_only_output", True))
         self._mirror_index = None       # uuid -> filename, lazy
+        self.last_excluded = []
 
     # --- public ------------------------------------------------------------
 
@@ -204,21 +205,28 @@ class Writer:
                               target_path, detail))
         return "converted" if conflicted else kind
 
-    def handle_deletions(self, live_uuids):
+    def handle_deletions(self, live_uuids, excluded_uuids=()):
         """
-        Mirror files whose note vanished from the container, per on_delete.
-        Returns the list of affected filenames.
+        Mirror files whose note vanished from the container (on_delete) or
+        became excluded (on_exclude). Returns the affected filenames;
+        self.last_excluded holds the subset that were exclusions.
         """
         affected = []
+        self.last_excluded = []
         for uuid, name in list(self._index().items()):
             if uuid in live_uuids:
                 continue
-            self._dispose(name)
+            excluded = uuid in excluded_uuids
+            policy = self.config.on_exclude() if excluded else self.config.on_delete()
+            self._dispose(name, uuid, policy,
+                          reason="excluded" if excluded else "note deleted")
             del self._index()[uuid]
             affected.append(name)
-            self.events.put(Event("deleted", os.path.join(self.output_dir, name),
-                                  "dry run" if self.dry_run else
-                                  self.config.on_delete()))
+            if excluded:
+                self.last_excluded.append(name)
+            self.events.put(Event("excluded" if excluded else "deleted",
+                                  os.path.join(self.output_dir, name),
+                                  "dry run" if self.dry_run else policy))
         return affected
 
     # --- internals ---------------------------------------------------------
@@ -287,16 +295,18 @@ class Writer:
         if not self.dry_run and os.path.exists(path):
             os.remove(path)
 
-    def _dispose(self, name):
-        """Apply on_delete to the mirror file of a note deleted in Stickies."""
+    def _dispose(self, name, uuid, policy, reason):
+        """Apply a deletion policy to a mirror file and its attachments."""
         path = os.path.join(self.output_dir, name)
-        policy = self.config.on_delete()
-        self.logger.info(f"note deleted: {name} -> {policy}"
+        uuid8 = uuid.replace("-", "")[:8].lower()
+        attachments = os.path.join(self.output_dir, ATTACHMENTS_DIR, uuid8)
+        self.logger.info(f"{reason}: {name} -> {policy}"
                          f"{' (dry run)' if self.dry_run else ''}")
         if self.dry_run or not os.path.exists(path) or policy == "keep":
             return
         if policy == "delete":
             os.remove(path)
+            shutil.rmtree(attachments, ignore_errors=True)
             return
         # "mark" and "archive" both annotate first.
         self._annotate_deleted(path)
@@ -308,6 +318,13 @@ class Writer:
                 stamp = time.strftime("%Y%m%d-%H%M%S")
                 target = os.path.join(deleted_dir, f"{name[:-3]}.{stamp}.md")
             shutil.move(path, target)
+            if os.path.isdir(attachments):
+                # Keep the file's relative links valid inside deleted_dir.
+                archived = os.path.join(deleted_dir, ATTACHMENTS_DIR, uuid8)
+                if os.path.exists(archived):
+                    shutil.rmtree(archived)
+                os.makedirs(os.path.dirname(archived), exist_ok=True)
+                shutil.move(attachments, archived)
 
     def _annotate_deleted(self, path):
         """

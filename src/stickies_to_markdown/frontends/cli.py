@@ -137,6 +137,8 @@ def _apply_sets(config, assignments):
 
 
 def _coerce(raw, default):
+    if isinstance(default, list):
+        return [item.strip() for item in raw.split(",") if item.strip()]
     if isinstance(default, bool):
         return raw.lower() in ("1", "true", "yes", "on")
     if isinstance(default, float):

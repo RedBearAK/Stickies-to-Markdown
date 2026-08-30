@@ -81,6 +81,12 @@ class Config:
             "filename_style": "slug-uuid",          # or "uuid"
             "on_delete": "archive",                 # mark | delete | keep
             "deleted_dir": "_deleted",              # relative to output_dir, or absolute
+            # Exclusion is REACTIVE: a note that matches is treated as if
+            # deleted, per on_exclude. Colour is the attribute to use - it
+            # can be set on an empty note before any content autosaves.
+            "exclude_colors": [],                   # e.g. ["gray"]
+            "exclude_title_regex": "",              # e.g. "^\\s*#private\\b"
+            "on_exclude": "delete",                 # archive | mark | delete | keep
             "debounce_seconds": 3.0,                # per-note quiet time; Stickies
                                                     # autosaves 8+ s apart (verified)
             "settle_seconds": 1.0,                  # package stops changing; the
@@ -178,6 +184,10 @@ class Config:
 
     def on_delete(self):
         value = str(self.get("on_delete") or "archive")
+        return ON_DELETE_ALIASES.get(value, value)
+
+    def on_exclude(self):
+        value = str(self.get("on_exclude") or "delete")
         return ON_DELETE_ALIASES.get(value, value)
 
     def deleted_dir(self):

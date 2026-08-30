@@ -6,6 +6,7 @@ Output goes to the log and the event queue. Never to a terminal.
 """
 
 import os
+import re
 import time
 import threading
 
@@ -24,6 +25,7 @@ class Counters:
         self.converted = 0
         self.unchanged = 0
         self.deleted = 0
+        self.excluded = 0
         self.errors = 0
 
     def bump(self, name, amount=1):
@@ -32,7 +34,8 @@ class Counters:
 
     def as_dict(self):
         return {"converted": self.converted, "unchanged": self.unchanged,
-                "deleted": self.deleted, "errors": self.errors}
+                "deleted": self.deleted, "excluded": self.excluded,
+                "errors": self.errors}
 
 
 # A filesystem event fires when a write begins, not when the writer is done,
@@ -88,8 +91,33 @@ class NoteProcessor:
         self.logger = logger or get_logger()
         self.writer = Writer(config, events, self.logger)
 
+    def is_excluded(self, note, markdown=None):
+        """
+        Reactive exclusion: by colour (checked before conversion) or by a
+        regex on the first line (needs the converted text). Returns the
+        matching reason or "".
+        """
+        colors = [str(c).lower() for c in (self.config.get("exclude_colors") or [])]
+        if note.color in colors:
+            return f"colour {note.color}"
+        pattern = self.config.get("exclude_title_regex") or ""
+        if pattern and markdown is not None:
+            first = next((l for l in markdown.splitlines() if l.strip()), "")
+            try:
+                if re.search(pattern, first):
+                    return f"title matches {pattern!r}"
+            except re.error as error:
+                self.logger.error(f"exclude_title_regex invalid: {error}")
+        return ""
+
     def process_note(self, note, settle=False):
-        """Convert one note and bring its mirror file up to date."""
+        """
+        Convert one note and bring its mirror file up to date. Returns the
+        Event kind, or "excluded" (the caller then applies on_exclude to
+        any mirror file the note left behind).
+        """
+        if self.is_excluded(note):
+            return "excluded"
         if settle and not wait_until_stable(
                 note.rtfd_path, float(self.config.get("settle_seconds", 1.0))):
             self.events.put(Event("error", note.rtfd_path, "never settled"))
@@ -103,6 +131,8 @@ class NoteProcessor:
             self.events.put(Event("error", note.rtfd_path, str(error)))
             self.counters.bump("errors")
             return "error"
+        if self.is_excluded(note, markdown):
+            return "excluded"
         kind = self.writer.export_note(note, markdown, attachments)
         if kind in ("converted", "unchanged"):
             self.counters.bump(kind)
@@ -125,10 +155,15 @@ class NoteProcessor:
 
         notes = stickies.enumerate_notes(stickies_dir, self.logger)
         self.logger.info(f"Export start: {len(notes)} notes in {stickies_dir}")
+        excluded = set()
         for note in sorted(notes.values(), key=lambda n: n.uuid):
-            self.process_note(note)
-        removed = self.writer.handle_deletions(set(notes.keys()))
-        self.counters.bump("deleted", len(removed))
+            if self.process_note(note) == "excluded":
+                excluded.add(note.uuid)
+        live = set(notes.keys()) - excluded
+        removed = self.writer.handle_deletions(live, excluded)
+        self.counters.bump("deleted", len(removed) - len(
+            [n for n in removed if n in self.writer.last_excluded]))
+        self.counters.bump("excluded", len(self.writer.last_excluded))
         self.events.put(Event("scanned", stickies_dir,
                               f"{len(notes)} notes; {self.counters.as_dict()}"))
         self.logger.info(f"Export complete: {self.counters.as_dict()}")

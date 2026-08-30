@@ -150,6 +150,62 @@ def test_on_delete_delete_and_keep():
     return ok
 
 
+def test_exclusion_by_color_is_reactive():
+    with Sandbox() as box:
+        _export(box)                       # gray note (66666666) mirrored
+        ok = check(any(f.name.endswith("66666666.md") for f in box.mirror_files()),
+                   "before exclusion the gray note is mirrored", "not mirrored")
+        box.config.set("exclude_colors", ["gray"])
+        counters = _export(box)            # now it becomes excluded
+        ok &= check(not any(f.name.endswith("66666666.md") for f in box.mirror_files())
+                    and not (box.output / "_deleted").exists(),
+                    "exclusion applied on_exclude=delete (gone, not archived)",
+                    f"{[f.name for f in box.mirror_files()]}")
+        ok &= check(counters.excluded == 1 and counters.deleted == 0
+                    and counters.converted == 0,
+                    "counted as excluded, not deleted", f"{counters.as_dict()}")
+        before = box.tree_signature(box.output)
+        _export(box)
+        ok &= check(before == box.tree_signature(box.output),
+                    "excluded note stays excluded, nothing churns", "churn")
+        return ok
+
+
+def test_exclusion_by_title_regex_with_archive():
+    with Sandbox(exclude_title_regex=r"^Packing", on_exclude="archive") as box:
+        counters = _export(box)
+        names = [f.name for f in box.mirror_files()]
+        ok = check(not any("33333333" in n for n in names) and counters.excluded == 0,
+                   "title-excluded note never written (nothing to dispose)", f"{names}")
+        box.config.set("exclude_title_regex", "")
+        _export(box)
+        box.config.set("exclude_title_regex", r"^Packing")
+        _export(box)
+        archived = box.output / "_deleted" / "packing--33333333.md"
+        ok &= check(archived.is_file(), "on_exclude=archive archives a newly excluded note",
+                    f"missing: {archived}")
+        return ok
+
+
+def test_attachments_follow_the_file():
+    with Sandbox() as box:                 # default archive
+        _export(box)
+        import shutil
+        shutil.rmtree(box.container / "77777777-ABAB-4ABA-8ABA-777777777777.rtfd")
+        _export(box)
+        moved = box.output / "_deleted" / "attachments" / "77777777" / "photo.png"
+        ok = check(moved.is_file() and not (box.output / "attachments" / "77777777").exists(),
+                   "archive moves the note's attachments alongside it", f"{moved}")
+    with Sandbox(on_delete="delete") as box:
+        _export(box)
+        import shutil
+        shutil.rmtree(box.container / "77777777-ABAB-4ABA-8ABA-777777777777.rtfd")
+        _export(box)
+        ok &= check(not (box.output / "attachments" / "77777777").exists(),
+                    "delete removes the note's attachments", "attachments left behind")
+    return ok
+
+
 def test_custom_deleted_dir_and_collision():
     with Sandbox(deleted_dir="Deleted_Stickies") as box:
         _export(box)
@@ -168,7 +224,7 @@ def test_custom_deleted_dir_and_collision():
             "22222222-BBBB-4BBB-8BBB-222222222222\ncontent-hash: x\n---\n\nnew\n",
             encoding="utf-8")
         from stickies_to_markdown.engine.writer import Writer
-        Writer(box.config, EventQueue()).handle_deletions(set())
+        Writer(box.config, EventQueue()).handle_deletions(set(), set())
         copies = sorted((box.output / "Deleted_Stickies").glob("project-ideas--22222222*.md"))
         ok &= check(len(copies) == 2 and "EDITED" in archived.read_text(encoding="utf-8"),
                     "archive collision gets a timestamp suffix; first copy intact",
@@ -286,7 +342,9 @@ if __name__ == "__main__":
              test_modified_note_rewrites_exactly_one_file,
              test_deleted_note_archives_with_annotation,
              test_on_delete_mark_annotates_in_place, test_on_delete_delete_and_keep,
-             test_custom_deleted_dir_and_collision, test_container_never_touched,
+             test_custom_deleted_dir_and_collision, test_exclusion_by_color_is_reactive,
+             test_exclusion_by_title_regex_with_archive, test_attachments_follow_the_file,
+             test_container_never_touched,
              test_unmarked_file_is_never_touched,
              test_external_edit_quarantined_to_conflicts,
              test_read_only_mode, test_obsidian_flavor_and_uuid_style,

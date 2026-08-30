@@ -16,8 +16,8 @@ import threading
 
 
 EVENT_KINDS = (
-    "started", "stopped", "converted", "unchanged", "deleted", "conflict",
-    "scanned", "config_reloaded", "error",
+    "started", "stopped", "converted", "unchanged", "deleted", "excluded",
+    "conflict", "scanned", "config_reloaded", "error",
 )
 
 

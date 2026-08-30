@@ -60,6 +60,11 @@ def test_set_roundtrip_and_validation():
         box.config.reload()
         ok &= check(box.config.get("debounce_seconds") == 5.5,
                     "float value coerced", f"{box.config.get('debounce_seconds')!r}")
+        _run(box, "--set", "exclude_colors=gray, pink")
+        box.config.reload()
+        ok &= check(box.config.get("exclude_colors") == ["gray", "pink"],
+                    "list value coerced from comma-separated",
+                    f"{box.config.get('exclude_colors')!r}")
         code2, _out2, err2 = _run(box, "--set", "no_such_key=1")
         ok &= check(code2 == 2 and "Unknown setting" in err2,
                     "unknown key rejected with exit 2", f"rc={code2}")

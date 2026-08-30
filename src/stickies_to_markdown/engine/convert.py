@@ -22,6 +22,7 @@ in a subprocess - which is what textutil already is, courtesy of Apple.
 """
 
 import os
+import re
 import sys
 import html
 import subprocess
@@ -78,6 +79,47 @@ def convert(rtfd_path, converter="auto", logger=None):
     raise ConversionError(
         f"{rtfd_path}: no converter produced output (tried {', '.join(order)}; "
         f"{detail})")
+
+
+# Inline: characters that misrender wherever they appear. `_` only at a
+# word boundary (my_var is safe; _word_ is not); `#` only when it would
+# form an Obsidian tag; `<` only when it could open a tag/autolink; `&`
+# only when it forms an entity; `~~`, `==`, `%%` only doubled.
+_INLINE_ESCAPE = re.compile(
+    r"([\\*`$\[\]])"                      # always
+    r"|(?<![A-Za-z0-9])(_)|(_)(?![A-Za-z0-9])"  # underscore at word edge
+    r"|(#)(?=[A-Za-z_/])"                 # #tag
+    r"|(<)(?=[A-Za-z/!?])"                # <tag> <http:...>
+    r"|(&)(?=#?[A-Za-z0-9]+;)"            # &entity;
+    r"|(~)(?=~)|(=)(?==)|(%)(?=%)"        # ~~ == %%
+)
+# Line start: headings, quotes, bullets, numbered items, thematic breaks
+# and setext underlines (a line of --- or === makes the line ABOVE a
+# heading). Escaping the first character defuses all of them.
+_LINE_START_ESCAPE = re.compile(
+    r"^(?P<c>[#>]|[-+*](?=\s)|(?=\d{1,9}[.)]\s)\d|(?=[-*_=]\s*[-*_=\s]*$)[-*_=])",
+    re.MULTILINE)
+# 4+ spaces or a tab at line start = indented code block. Non-breaking
+# spaces keep the visual indent without that meaning.
+_INDENT = re.compile(r"^( {4,}|\t+| *\t[ \t]*)", re.MULTILINE)
+
+
+def escape_markdown(text):
+    """
+    Backslash-escape punctuation that a Markdown renderer (CommonMark or
+    Obsidian) would otherwise interpret, so note text is shown as written.
+    Verified need: Excel formulas like "*U*" (italic) and $A$5 (Obsidian
+    inline math). Only plain text goes through here - markup the converter
+    itself produces (**, *, list prefixes, attachment marks) is added
+    afterwards and is not escaped.
+    """
+    def inline(match):
+        return "\\" + next(g for g in match.groups() if g)
+
+    text = _INLINE_ESCAPE.sub(inline, text)
+    text = _LINE_START_ESCAPE.sub(lambda m: "\\" + m.group("c"), text)
+    return _INDENT.sub(lambda m: m.group(1).replace("\t", "\u00a0" * 4)
+                       .replace(" ", "\u00a0"), text)
 
 
 def _tidy(text):
@@ -208,7 +250,7 @@ class _HtmlWalker(HTMLParser):
         if self.pending_prefix:
             self.out.append(self.pending_prefix)
             self.pending_prefix = ""
-        self.out.append(text)
+        self.out.append(escape_markdown(text))
 
     def _newline(self):
         if self.out and not ''.join(self.out[-2:]).endswith('\n'):
@@ -254,7 +296,7 @@ _RTF_CHAR_MAP = {
 def _convert_text(rtfd_path):
     rtf_path = os.path.join(rtfd_path, RTF_NAME)
     with open(rtf_path, 'rb') as handle:
-        return rtf_to_text(handle.read())
+        return escape_markdown(rtf_to_text(handle.read()))
 
 
 def rtf_to_text(data):
