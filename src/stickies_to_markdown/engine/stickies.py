@@ -40,8 +40,10 @@ _UUID_RE = re.compile(
 COLOR_NAMES = ("yellow", "blue", "green", "pink", "purple", "gray")
 
 # Hue bands in degrees (colorsys hue * 360). Below GRAY_SATURATION the
-# colour is grey regardless of hue. Verified: yellow at ~54 degrees. The
-# others are hue-theory placements pending step-6 calibration.
+# colour is grey regardless of hue. Verified on a real Mac (2026-08-30):
+#   yellow #fef49c 54deg   blue #adf4ff 188deg   green #b2ffa1 109deg
+#   pink   #ffc7c7  0deg   (a pure red tint - hence the 0-20 band)
+# purple and gray are still hue-theory placements pending calibration.
 GRAY_SATURATION = 0.12
 _HUE_BANDS = (
     (20, 75, "yellow"),
@@ -114,6 +116,10 @@ def enumerate_notes(stickies_dir, logger=None):
             continue
         rtfd_path = os.path.join(stickies_dir, name)
         if not os.path.isdir(rtfd_path):
+            # Verified 2026-08-30: a brand-new note exists as a FLAT .rtfd
+            # file for a few seconds before Stickies replaces it with the
+            # package directory on first content save. Not a note yet.
+            logger.info(f"Flat (not yet a package) .rtfd skipped: {name}")
             continue
         if not os.path.isfile(os.path.join(rtfd_path, RTF_NAME)):
             logger.warning(f"Package without {RTF_NAME}, skipped: {name}")

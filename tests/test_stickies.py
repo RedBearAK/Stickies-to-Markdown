@@ -73,9 +73,11 @@ def test_non_note_entries_ignored():
         (box.container / "stray.txt").write_text("x")
         empty_pkg = box.container / "99999999-9999-4999-8999-999999999999.rtfd"
         empty_pkg.mkdir()      # no TXT.rtf inside
+        flat = box.container / "88888888-8888-4888-8888-888888888888.rtfd"
+        flat.write_bytes(b"rtfd\x00flat")   # new-note transient (verified)
         notes = stickies.enumerate_notes(str(box.container))
         return check(len(notes) == 7,
-                     "non-UUID names, files and RTF-less packages skipped",
+                     "non-UUID names, files, flat .rtfd and RTF-less packages skipped",
                      f"found {len(notes)}: {sorted(notes)}")
 
 

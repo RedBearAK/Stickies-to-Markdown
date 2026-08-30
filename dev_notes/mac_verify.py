@@ -193,14 +193,24 @@ def step_3_state(log, args):
 # --- step 4 ----------------------------------------------------------------
 
 def _tree_state(container):
-    """path -> (inode, size, mtime_ns) for everything in the container."""
+    """path -> (inode, size, mtime_ns, is_dir) for everything in the
+    container, directories included: a new note is born as a FLAT .rtfd
+    file and becomes a directory a few seconds later (verified), so the
+    file/dir distinction is part of the finding."""
     state = {}
-    for root, _dirs, files in os.walk(container):
+    for root, dirs, files in os.walk(container):
+        for name in dirs:
+            path = os.path.join(root, name)
+            try:
+                st = os.stat(path)
+                state[path] = (st.st_ino, 0, st.st_mtime_ns, True)
+            except OSError:
+                pass
         for name in files:
             path = os.path.join(root, name)
             try:
                 st = os.stat(path)
-                state[path] = (st.st_ino, st.st_size, st.st_mtime_ns)
+                state[path] = (st.st_ino, st.st_size, st.st_mtime_ns, False)
             except OSError:
                 pass
     return state
@@ -208,8 +218,13 @@ def _tree_state(container):
 
 def step_4_watch(log, args):
     log.section(f"4. Live-write behavior ({args.watch_seconds}s watch)")
-    log.line(">>> Type into an EXISTING note now, pause a few seconds,")
-    log.line(">>> type again, then create a NEW note and delete another.")
+    if args.watch_seconds < 40:
+        log.line("    (tip: --watch-seconds 45 fits the whole sequence)")
+    log.line(">>> Sequence (do NOT create a new note - that pattern is known):")
+    log.line(">>>   1. type a few words into an EXISTING note, then wait 8 s")
+    log.line(">>>   2. click a DIFFERENT note (focus change), wait 5 s")
+    log.line(">>>   3. close the edited note's window, wait 5 s")
+    log.line(">>>   4. if time remains: delete a throwaway note")
     log.line(">>> Watching for changes...")
     container = args.stickies_dir
     before = _tree_state(container)
@@ -220,14 +235,19 @@ def step_4_watch(log, args):
         after = _tree_state(container)
         stamp = time.strftime("%H:%M:%S")
         for path in after.keys() - before.keys():
-            log.line(f"  {stamp}  CREATED  {os.path.relpath(path, container)}")
+            kind = "DIR " if after[path][3] else "FILE"
+            log.line(f"  {stamp}  CREATED {kind} {os.path.relpath(path, container)}")
             seen += 1
         for path in before.keys() - after.keys():
-            log.line(f"  {stamp}  DELETED  {os.path.relpath(path, container)}")
+            kind = "DIR " if before[path][3] else "FILE"
+            log.line(f"  {stamp}  DELETED {kind} {os.path.relpath(path, container)}")
             seen += 1
         for path in after.keys() & before.keys():
-            if before[path] != after[path]:
+            if before[path][:3] != after[path][:3]:
                 rel = os.path.relpath(path, container)
+                if after[path][3]:          # directory mtime = entry churn
+                    log.line(f"  {stamp}  DIR-TOUCH {rel}")
+                    continue
                 same_inode = before[path][0] == after[path][0]
                 how = "IN-PLACE (same inode)" if same_inode \
                     else "REPLACED (new inode = temp-and-rename)"

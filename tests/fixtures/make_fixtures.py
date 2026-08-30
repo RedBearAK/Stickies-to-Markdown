@@ -22,14 +22,14 @@ HEADER = (r"{\rtf1\ansi\ansicpg1252\cocoartf2761" "\n"
           r"{\colortbl;\red255\green255\blue255;}" "\n"
           r"\pard\tx560\pardirnatural\partightenfactor0" "\n")
 
-# StickyColor float RGB per note. Yellow is the real value observed on a
-# Mac (#fef49c); the others are plausible members of their hue bands
-# pending calibration (dev_notes/mac_verify.py step 6).
+# StickyColor float RGB per note. yellow/blue/green/pink are the real
+# values observed on a Mac (2026-08-30); purple and gray are plausible
+# members of their hue bands pending calibration (mac_verify.py step 6).
 COLORS = {
-    "yellow": (0.996, 0.957, 0.612),
-    "blue":   (0.639, 0.831, 0.996),
-    "green":  (0.749, 0.945, 0.639),
-    "pink":   (0.996, 0.749, 0.827),
+    "yellow": (0.996, 0.957, 0.612),    # #fef49c  verified
+    "blue":   (0.678, 0.957, 1.000),    # #adf4ff  verified
+    "green":  (0.698, 1.000, 0.631),    # #b2ffa1  verified
+    "pink":   (1.000, 0.780, 0.780),    # #ffc7c7  verified
     "purple": (0.859, 0.749, 0.996),
     "gray":   (0.882, 0.882, 0.882),
 }

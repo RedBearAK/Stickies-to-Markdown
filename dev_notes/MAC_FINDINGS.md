@@ -1,7 +1,7 @@
 # Mac findings (verified, not inferred)
 
-Source: `stickies_verify_20260830-140919.log`, macOS with Python 3.12.13,
-run from VS Code's embedded terminal. Each item below replaces an
+Source: `stickies_verify_20260830-140919.log` and `-142131.log`, macOS with
+Python 3.12.13, run from VS Code's embedded terminal. Each item below replaces an
 assumption in the handoff §4 or in Phase 1 code.
 
 ## Permissions
@@ -45,6 +45,40 @@ assumption in the handoff §4 or in Phase 1 code.
   matter). One calibration point so far: yellow = `#fef49c`, hue 54°.
 - Order comes from `ZOrder`.
 
+## Live-write behavior (partial)
+
+Observed for **note creation** (second log, step 4):
+
+    14:21:49  CREATED  <uuid>.rtfd            <- a FLAT FILE, not a directory
+    14:21:54  CREATED  <uuid>.rtfd/TXT.rtf    <- package directory appears
+    14:21:54  DELETED  <uuid>.rtfd            <- the flat file is gone
+    14:21:54  CHANGED  .SavedStickiesState   REPLACED (temp-and-rename)
+
+- A new note is born as a flat `.rtfd` file (an NSFileWrapper flat
+  serialization) and becomes a real package ~5 s later on first content
+  save. `enumerate_notes()` skips non-directories with a log line; Phase 2's
+  watcher must treat a flat-file create as "not a note yet" and wait for
+  the directory. Settle logic on the package covers this naturally (a file
+  has no `TXT.rtf` inside; the signature changes when the dir lands).
+- `.SavedStickiesState` is rewritten by temp-and-rename on every save.
+  Phase 2 should never react to it directly beyond a debounced colour
+  refresh; the note's own package is the change signal.
+- **Editing an existing note was not captured** in either run: still
+  unknown whether `TXT.rtf` is rewritten in place or replaced. The script's
+  step 4 now steers a specific edit/focus-change/close sequence.
+
+## Colour calibration (4 of 6)
+
+    yellow  #fef49c  hue  54  sat 0.39
+    blue    #adf4ff  hue 188  sat 0.32
+    green   #b2ffa1  hue 109  sat 0.37
+    pink    #ffc7c7  hue   0  sat 0.22   <- pure red tint; the 0-20 band
+
+All four classify correctly with the current `_HUE_BANDS`. Purple and gray
+are unverified; make one note of each and re-run `--steps 6`. The state
+file also carries `ControlColor`, `HighlightColor`, `SpineColor` (darker
+variants of the same hue) - not used.
+
 ## Conversion
 
 - **textutil works** on real packages (rc=0). Output shape (Cocoa HTML
@@ -61,16 +95,18 @@ assumption in the handoff §4 or in Phase 1 code.
   higher-fidelity tier is ever wanted it must be an AppKit helper in a
   subprocess - which is what textutil already is.
 - Tier "text" (stdlib RTF) produced clean output on a 4.7 KB real note.
+- After the walker rewrite, **textutil output matches the text tier
+  byte-for-byte** on that note (second log), plus the attachment marker
+  placed inline where the image sits rather than appended. Bold/italic
+  still unexercised - that note has none.
 
 ## Still open
 
-- [ ] **Live-write pattern** (step 4): nothing observed in 25 s. Re-run
-      `--steps 4 --watch-seconds 90` typing continuously, then close the
-      note window, then quit Stickies, all inside the window. Need: does
-      TXT.rtf rewrite in place or get replaced (inode), and does the state
-      file churn with it.
-- [ ] **Colour calibration** (step 6): confirm blue, green, pink, purple,
-      gray against the hue bands; adjust `_HUE_BANDS` / `GRAY_SATURATION`.
+- [ ] **Existing-note edit pattern** (step 4): creation is understood;
+      editing is not. Re-run `--steps 4 --watch-seconds 45` and follow the
+      on-screen sequence (type into an existing note, change focus, close
+      its window). Need: `TXT.rtf` in-place vs replaced, and the delay.
+- [ ] **Colour calibration**: purple and gray only (`--steps 6`).
 - [ ] **Bold/italic through textutil** (step 7 on a formatted note).
 - [ ] **TCC service name** for `tccutil reset` (see Permissions).
 - [ ] **Real fixtures** (step 8 with `--capture`, then sanitise).
