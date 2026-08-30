@@ -4,7 +4,8 @@
 from _helpers import FIXTURES, check, run_suite
 
 from stickies_to_markdown.engine.convert import (
-    rtf_to_text, html_to_markdown, convert, list_attachments, escape_markdown)
+    rtf_to_text, html_to_markdown, convert, list_attachments, escape_markdown,
+    needs_code_block, escape_density, first_content_line)
 
 
 def test_paragraphs_and_escapes():
@@ -46,7 +47,7 @@ def test_empty_note_is_empty():
 
 def test_convert_entry_point_falls_through():
     # On Linux tiers 1-2 are unavailable; "auto" must land on tier 3.
-    markdown, attachments = convert(
+    markdown, attachments, body_format = convert(
         str(FIXTURES / "77777777-ABAB-4ABA-8ABA-777777777777.rtfd"), "auto")
     ok = check("Whiteboard photo" in markdown,
                "auto converter fell through to tier 3",
@@ -54,6 +55,8 @@ def test_convert_entry_point_falls_through():
     ok &= check(attachments == ["photo.png"],
                 "attachment enumerated from the package directory",
                 f"attachments: {attachments!r}")
+    ok &= check(body_format == "markdown", "prose note reports body_format=markdown",
+                body_format)
     return ok
 
 
@@ -169,12 +172,45 @@ def test_markdown_punctuation_escaped():
                 f"{markdown!r}")
     return ok
 
+FORMULA_RTF = (rb'{\rtf1\ansi\ansicpg1252\cocoartf2761{\fonttbl\f0\fswiss\fcharset0 Helvetica;}'
+               rb'\f0\fs24 Excel formulas\par =SUMIF($A$5:$A$57,"*U*",C5:C57)\par '
+               rb'=SUMIF(C14:C54,"<>"&"*Total*",K14:K54)\par =MOD($B$3,2)\par}')
+
+
+def test_escape_dense_note_becomes_code_block():
+    import tempfile
+    from pathlib import Path as _P
+    prose = "Grocery list\nMilk and eggs\nsee #todo later\n"
+    ok = check(not needs_code_block(prose), "prose with one tag stays markdown",
+               f"density {escape_density(prose):.1f}")
+    with tempfile.TemporaryDirectory() as tmp:
+        pkg = _P(tmp) / "12345678-0000-4000-8000-000000000000.rtfd"
+        pkg.mkdir()
+        (pkg / "TXT.rtf").write_bytes(FORMULA_RTF)
+        markdown, _att, fmt = convert(str(pkg), "text")
+        ok &= check(fmt == "code" and markdown.startswith("```\n")
+                    and markdown.rstrip().endswith("```"),
+                    "formula-heavy note emitted as a fenced code block",
+                    f"{fmt} {markdown!r}")
+        ok &= check('=SUMIF($A$5:$A$57,"*U*",C5:C57)' in markdown and "\\" not in markdown,
+                    "code block holds the text verbatim, no backslashes", markdown)
+        ok &= check(first_content_line(markdown) == "Excel formulas",
+                    "first content line skips the fence (slug/title source)",
+                    first_content_line(markdown))
+        markdown2, _a, fmt2 = convert(str(pkg), "text", code_block_min=0)
+        ok &= check(fmt2 == "markdown" and "\\$A\\$5" in markdown2,
+                    "threshold 0 disables the code block (escaping instead)",
+                    f"{fmt2} {markdown2!r}")
+    return ok
+
+
 if __name__ == "__main__":
     tests = [test_paragraphs_and_escapes, test_destinations_skipped,
              test_unicode_and_emoji, test_empty_note_is_empty,
              test_convert_entry_point_falls_through,
              test_list_attachments_ignores_rtf_and_hidden, test_html_walker,
-             test_cocoa_html_writer_shape, test_markdown_punctuation_escaped]
+             test_cocoa_html_writer_shape, test_markdown_punctuation_escaped,
+             test_escape_dense_note_becomes_code_block]
     exit(0 if run_suite("conversion tests", tests) else 1)
 
 

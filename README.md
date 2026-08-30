@@ -52,6 +52,7 @@ synced-by: stickies-to-markdown      # ownership marker (see Safety)
 stickies-uuid: 5A2B...-...           # identity, survives retitling
 color: yellow                        # palette name classified from the RGB below
 color-hex: "#fef49c"                 # the exact StickyColor from .SavedStickiesState
+body-format: markdown                # or "code" when the body is a fenced block
 created: 2026-08-30T09:12:03
 modified: 2026-08-30T14:02:41
 source: /Users/you/Library/.../5A2B....rtfd
@@ -103,6 +104,7 @@ linked from the body.
 | `exclude_colors` | `[]` | colours to keep out of the mirror |
 | `exclude_title_regex` | *(none)* | first-line pattern to keep out |
 | `on_exclude` | `delete` | policy for a note that becomes excluded |
+| `code_block_min_escapes` / `code_block_density` | `6` / `4.0` | when a note becomes a fenced code block (see below) |
 | `read_only_output` | `true` | chmod 444 mirror files |
 | `include_attachments` | `true` | copy package attachments |
 
@@ -145,6 +147,15 @@ rather than turning the line above into a heading, indented lines keep
 their indent rather than becoming code blocks, and `#word` does not
 become a vault tag. Only the converter's own output (bold/italic from
 Stickies formatting, real lists, attachment links) is live Markdown.
+
+A note that would need *heavy* escaping - formulas, passwords, shell
+snippets - is not prose, and a body full of backslashes helps nobody.
+Such a note is emitted verbatim inside a fenced code block instead
+(monospaced, copy button in Obsidian) and its front matter says
+`body-format: code`; everything else says `body-format: markdown`. The
+trigger is `code_block_min_escapes` (default 6) *and*
+`code_block_density` (default 4 per 100 non-space characters); set either
+to `0` to always escape instead.
 
 Config lives at `~/Library/Application Support/StickiesToMarkdown/` (macOS)
 or `~/.config/stickies-to-markdown/` (Linux), JSON, hot-reload-friendly.

@@ -34,6 +34,7 @@ import tempfile
 
 from stickies_to_markdown.engine.events import Event
 from stickies_to_markdown.engine.emitters import flavor_keys, deleted_keys
+from stickies_to_markdown.engine.convert import first_content_line
 from stickies_to_markdown.engine.logsetup import get_logger
 
 
@@ -121,10 +122,8 @@ def slugify(first_line):
     return text[:_SLUG_MAX].rstrip("-") or "note"
 
 def first_line_of(markdown):
-    for line in markdown.split("\n"):
-        if line.strip():
-            return line.strip().lstrip("#").strip() or line.strip()
-    return ""
+    line = first_content_line(markdown)
+    return line.lstrip("#").strip() or line
 
 def filename_for(note, markdown, style):
     if style == "uuid":
@@ -164,11 +163,12 @@ class Writer:
 
     # --- public ------------------------------------------------------------
 
-    def export_note(self, note, markdown, attachments):
+    def export_note(self, note, markdown, attachments, body_format="markdown"):
         """
         Bring the mirror file (and attachments) for one note up to date.
         Returns the Event kind that describes what happened.
         """
+        self._body_format = body_format
         os.makedirs(self.output_dir, exist_ok=True)
         markdown = self._resolve_attachment_links(note, markdown, attachments)
         target_name = filename_for(note, markdown, self.config.get("filename_style"))
@@ -244,6 +244,7 @@ class Writer:
                                      or (rtf_stat and rtf_stat.st_mtime)),
                 "modified": self._iso(rtf_stat and rtf_stat.st_mtime),
                 "source": note.rtfd_path,
+                "body-format": getattr(self, "_body_format", "markdown"),
                 "content-hash": body_hash(markdown),
                 "synced-at": self._iso(time.time()),
             }

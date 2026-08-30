@@ -95,6 +95,11 @@ class Config:
             "front_matter": True,
             "flavor": "generic",                    # or "obsidian"
             "read_only_output": True,               # chmod 444 mirror files
+            # A note needing this many escapes AND this density (per 100
+            # non-space chars) is emitted verbatim in a fenced code block
+            # instead of escaped. 0 in either disables.
+            "code_block_min_escapes": 6,
+            "code_block_density": 4.0,
             "converter": "auto",                    # textutil|text
             "log_file": os.path.join(self.config_dir, LOG_FILENAME),
             "log_level": "INFO",

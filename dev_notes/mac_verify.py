@@ -392,23 +392,25 @@ def step_7_converters(log, args):
     emphasis = re.compile(r"(?<!\\)\*\*[^*\n]+\*\*|(?<![\\*\w])\*[^*\\\n]+\*(?![*\w])")
     styled = []
     failures = []
-    log.line(f"  {'uuid8':<9} {'textutil':>9} {'text':>7}  emphasis  first line")
+    log.line(f"  {'uuid8':<9} {'textutil':>9} {'text':>7}  emphasis  format    first line")
     for pkg in packages:
         uuid8 = pkg.name[:8].lower()
         results = {}
         for tier in ("textutil", "text"):
             try:
-                markdown, _attachments = convert(str(pkg), tier)
+                markdown, _attachments, fmt = convert(str(pkg), tier)
                 results[tier] = markdown
+                results["format"] = fmt
             except Exception as error:
                 results[tier] = None
                 failures.append(f"{uuid8} {tier}: {type(error).__name__}: "
                                 f"{str(error)[:120]}")
         tu, tx = results.get("textutil"), results.get("text")
         runs = emphasis.findall(tu) if tu else []
-        first = next((l for l in (tu or tx or "").splitlines() if l.strip()), "")
+        first = next((l for l in (tu or tx or "").splitlines()
+                      if l.strip() and not l.startswith("```")), "")
         log.line(f"  {uuid8:<9} {'-' if tu is None else len(tu):>9} {'-' if tx is None else len(tx):>7}  "
-                 f"{len(runs):>8}  {first[:40]}")
+                 f"{len(runs):>8}  {results.get('format', '-'):<8}  {first[:40]}")
         if runs:
             styled.append((uuid8, runs, tu))
 

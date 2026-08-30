@@ -13,7 +13,8 @@ import threading
 from stickies_to_markdown.engine import stickies
 from stickies_to_markdown.engine.writer import Writer
 from stickies_to_markdown.engine.events import Event
-from stickies_to_markdown.engine.convert import convert, ConversionError
+from stickies_to_markdown.engine.convert import (
+    convert, ConversionError, first_content_line)
 from stickies_to_markdown.engine.logsetup import get_logger
 
 
@@ -102,7 +103,7 @@ class NoteProcessor:
             return f"colour {note.color}"
         pattern = self.config.get("exclude_title_regex") or ""
         if pattern and markdown is not None:
-            first = next((l for l in markdown.splitlines() if l.strip()), "")
+            first = first_content_line(markdown)
             try:
                 if re.search(pattern, first):
                     return f"title matches {pattern!r}"
@@ -124,8 +125,10 @@ class NoteProcessor:
             self.counters.bump("errors")
             return "error"
         try:
-            markdown, attachments = convert(
-                note.rtfd_path, self.config.get("converter", "auto"), self.logger)
+            markdown, attachments, body_format = convert(
+                note.rtfd_path, self.config.get("converter", "auto"), self.logger,
+                code_block_min=int(self.config.get("code_block_min_escapes", 6)),
+                code_block_density=float(self.config.get("code_block_density", 4.0)))
         except ConversionError as error:
             self.logger.error(str(error))
             self.events.put(Event("error", note.rtfd_path, str(error)))
@@ -133,7 +136,7 @@ class NoteProcessor:
             return "error"
         if self.is_excluded(note, markdown):
             return "excluded"
-        kind = self.writer.export_note(note, markdown, attachments)
+        kind = self.writer.export_note(note, markdown, attachments, body_format)
         if kind in ("converted", "unchanged"):
             self.counters.bump(kind)
         else:

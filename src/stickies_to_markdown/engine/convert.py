@@ -51,13 +51,34 @@ def list_attachments(rtfd_path):
                   and os.path.isfile(os.path.join(rtfd_path, n)))
 
 
-def convert(rtfd_path, converter="auto", logger=None):
+DEFAULT_CODE_BLOCK_MIN = 6        # escapes needed before considering a fence
+DEFAULT_CODE_BLOCK_DENSITY = 4.0  # escapes per 100 non-space characters
+
+
+def convert(rtfd_path, converter="auto", logger=None,
+            code_block_min=DEFAULT_CODE_BLOCK_MIN,
+            code_block_density=DEFAULT_CODE_BLOCK_DENSITY):
     """
-    (markdown_text, attachment_filenames). `converter` per config:
-    auto | textutil | text.
+    (markdown_text, attachment_filenames, body_format) where body_format is
+    "markdown" or "code". `converter` per config: auto | textutil | text.
+
+    A note whose plain text would need heavy escaping (formulas, passwords,
+    shell snippets) is not prose: rather than litter it with backslashes it
+    is emitted verbatim in a fenced code block. The decision is made on the
+    tier-3 plain text so it is the same whichever tier renders. Either
+    threshold at 0 disables it.
     """
     logger = logger or get_logger()
     attachments = list_attachments(rtfd_path)
+
+    if code_block_min and code_block_density:
+        try:
+            with open(os.path.join(rtfd_path, RTF_NAME), 'rb') as handle:
+                plain = rtf_to_text(handle.read())
+            if needs_code_block(plain, code_block_min, code_block_density):
+                return _fence(_tidy(plain)), attachments, "code"
+        except OSError as error:
+            logger.debug(f"Plain-text probe failed on {rtfd_path}: {error}")
 
     tiers = {"textutil": _convert_textutil, "text": _convert_text}
     order = [converter] if converter in tiers else ["textutil", "text"]
@@ -68,7 +89,7 @@ def convert(rtfd_path, converter="auto", logger=None):
         try:
             markdown = tiers[name](rtfd_path)
             if markdown is not None:
-                return _tidy(markdown), attachments
+                return _tidy(markdown), attachments, "markdown"
             unavailable.append(name)     # tier declined (wrong platform)
         except Exception as error:      # noqa: BLE001 - tiers must fall through
             last_error = error
@@ -102,6 +123,39 @@ _LINE_START_ESCAPE = re.compile(
 # 4+ spaces or a tab at line start = indented code block. Non-breaking
 # spaces keep the visual indent without that meaning.
 _INDENT = re.compile(r"^( {4,}|\t+| *\t[ \t]*)", re.MULTILINE)
+
+
+def count_escapes(text):
+    """How many characters escape_markdown() would touch."""
+    return (len(_INLINE_ESCAPE.findall(text))
+            + len(_LINE_START_ESCAPE.findall(text))
+            + len(_INDENT.findall(text)))
+
+
+def escape_density(text):
+    """Escapes per 100 non-whitespace characters."""
+    length = len(re.sub(r"\s", "", text))
+    return 100.0 * count_escapes(text) / length if length else 0.0
+
+
+def needs_code_block(text, minimum=DEFAULT_CODE_BLOCK_MIN,
+                     density=DEFAULT_CODE_BLOCK_DENSITY):
+    return count_escapes(text) >= minimum and escape_density(text) >= density
+
+
+def _fence(text):
+    """Wrap verbatim text in a fence longer than any backtick run inside."""
+    longest = max((len(m) for m in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return f"{fence}\n{text.rstrip(chr(10))}\n{fence}\n"
+
+
+def first_content_line(markdown):
+    """First non-empty line, ignoring a leading code fence."""
+    for line in markdown.split("\n"):
+        if line.strip() and not line.startswith("```"):
+            return line.strip()
+    return ""
 
 
 def escape_markdown(text):

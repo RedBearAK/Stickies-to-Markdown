@@ -206,6 +206,26 @@ def test_attachments_follow_the_file():
     return ok
 
 
+def test_code_block_note_front_matter_and_slug():
+    with Sandbox() as box:
+        from test_convert import FORMULA_RTF
+        pkg = box.container / "ABCDEF01-0000-4000-8000-000000000000.rtfd"
+        pkg.mkdir()
+        (pkg / "TXT.rtf").write_bytes(FORMULA_RTF)
+        _export(box)
+        target = box.output / "excel-formulas--abcdef01.md"
+        ok = check(target.is_file(), "slug comes from the first content line, not the fence",
+                   f"{[f.name for f in box.mirror_files()]}")
+        keys, body = split_front_matter(target.read_text(encoding="utf-8"))
+        ok &= check(keys.get("body-format") == "code", "front matter records body-format: code",
+                    f"{keys}")
+        grocery = next(f for f in box.mirror_files() if f.name.startswith("grocery"))
+        keys2, _ = split_front_matter(grocery.read_text(encoding="utf-8"))
+        ok &= check(keys2.get("body-format") == "markdown", "prose notes record markdown",
+                    f"{keys2}")
+        return ok
+
+
 def test_custom_deleted_dir_and_collision():
     with Sandbox(deleted_dir="Deleted_Stickies") as box:
         _export(box)
@@ -342,6 +362,7 @@ if __name__ == "__main__":
              test_modified_note_rewrites_exactly_one_file,
              test_deleted_note_archives_with_annotation,
              test_on_delete_mark_annotates_in_place, test_on_delete_delete_and_keep,
+             test_code_block_note_front_matter_and_slug,
              test_custom_deleted_dir_and_collision, test_exclusion_by_color_is_reactive,
              test_exclusion_by_title_regex_with_archive, test_attachments_follow_the_file,
              test_container_never_touched,
