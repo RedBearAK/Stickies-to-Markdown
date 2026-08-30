@@ -63,15 +63,22 @@ def convert(rtfd_path, converter="auto", logger=None):
     order = [converter] if converter in tiers else ["foundation", "textutil", "text"]
 
     last_error = None
+    unavailable = []
     for name in order:
         try:
             markdown = tiers[name](rtfd_path)
             if markdown is not None:
                 return _tidy(markdown), attachments
+            unavailable.append(name)     # tier declined (wrong platform)
         except Exception as error:      # noqa: BLE001 - tiers must fall through
             last_error = error
             logger.debug(f"Converter {name} failed on {rtfd_path}: {error}")
-    raise ConversionError(f"{rtfd_path}: all converters failed ({last_error})")
+    detail = (f"unavailable on this platform: {', '.join(unavailable)}"
+              if unavailable and last_error is None
+              else f"last error: {last_error}")
+    raise ConversionError(
+        f"{rtfd_path}: no converter produced output (tried {', '.join(order)}; "
+        f"{detail})")
 
 
 def _tidy(text):

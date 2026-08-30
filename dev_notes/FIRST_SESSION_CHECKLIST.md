@@ -1,5 +1,17 @@
 # First session on the Mac — verification checklist
 
+**Most of this is now automated:** run
+
+    python3 dev_notes/mac_verify.py
+
+from the repo root (with the venv python that has PyObjC, for step 6/7).
+It probes everything below, writes a timestamped `stickies_verify_*.log`
+with greppable `FINDING:` lines, and never writes inside the container.
+Re-run individual steps with `--steps 3,4`; stage fixture copies with
+`--capture DIR`. The manual notes below remain the reference for
+interpreting what the log reports and for the few judgment calls
+(colour mapping, sanitising fixtures, the no-FDA terminal test).
+
 The Linux-built Phase 1 rests on documented-but-unverified assumptions
 about the real container (handoff §7). Work through these **in order** on
 the target Mac, recording findings in the blanks. Steps 1–3 gate trusting
