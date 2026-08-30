@@ -19,8 +19,9 @@ Steps:
     4  live-write behavior (edit notes while it watches; inode tracking
        distinguishes in-place rewrite from temp-and-rename)
     5  textutil tier-2 output on a real package
-    6  Foundation tier-1 load probe (subprocess; a crash can't kill the run)
-    7  converter comparison: tiers on one package via the repo's engine
+    6  colour calibration: every note's StickyColor as hue/sat + the name
+       the engine assigns, for checking the hue bands in stickies.py
+    7  converter comparison: both tiers on one package via the repo engine
     8  capture sanitised fixture candidates (only with --capture)
 
 Stdlib only. Safe on Linux with --stickies-dir pointing at test fixtures
@@ -89,6 +90,10 @@ def step_1_container(log, args):
 
     log.finding(f"container readable WITHOUT error from this process "
                 f"({len(names)} entries)")
+    log.line("    (if a 'would like to access data from other apps' prompt "
+             "appeared, it was")
+    log.line("    attributed to the app hosting this terminal - Terminal.app, "
+             "VS Code, etc.)")
     rtfds = [n for n in names if n.endswith(".rtfd")]
     state = [n for n in names if n == ".SavedStickiesState"]
     others = [n for n in names if n not in rtfds and n not in state]
@@ -230,9 +235,11 @@ def step_4_watch(log, args):
                 seen += 1
         before = after
     if seen == 0:
-        log.finding("no changes observed - Stickies may not have autosaved "
-                    "in the window; re-run with --watch-seconds 60 and try "
-                    "quitting Stickies mid-watch")
+        log.finding("no changes observed - Stickies may write only on its own "
+                    "autosave timer, on window close, or on quit. Re-run: "
+                    "--steps 4 --watch-seconds 90, type continuously, then "
+                    "close the note's window, then Quit Stickies, all inside "
+                    "the window")
     else:
         log.finding(f"{seen} change events; read the CHANGED lines above: "
                     "in-place vs replaced decides the Phase 2 event mapping, "
@@ -265,39 +272,47 @@ def step_5_textutil(log, args):
 
 # --- step 6 ----------------------------------------------------------------
 
-_FOUNDATION_PROBE = """
-import Foundation
-url = Foundation.NSURL.fileURLWithPath_({pkg!r})
-s, a, e = (Foundation.NSAttributedString.alloc()
-           .initWithURL_options_documentAttributes_error_(
-               url, {{'DocumentType': 'NSRTFD'}}, None, None))
-print('loaded:', s is not None, '| length:', s and s.length(), '| err:', e)
-"""
-
-
-def step_6_foundation(log, args):
-    log.section("6. Foundation tier-1 load probe")
-    if not IS_MAC:
-        log.finding("skipped: not macOS")
+def step_6_colors(log, args):
+    log.section("6. Colour calibration (StickyColor -> palette name)")
+    src = Path(__file__).resolve().parent.parent / "src"
+    if src.is_dir() and str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    try:
+        from stickies_to_markdown.engine.stickies import classify_color
+    except ImportError as error:
+        log.finding(f"repo engine not importable ({error})")
         return
-    pkg = _pick_package(args.stickies_dir)
-    if pkg is None:
-        log.finding("no packages to load")
+    import colorsys
+    path = Path(args.stickies_dir) / ".SavedStickiesState"
+    try:
+        with open(path, "rb") as handle:
+            entries = plistlib.load(handle)
+    except Exception as error:
+        log.finding(f"state file unreadable: {error!r}")
         return
-    code = _FOUNDATION_PROBE.format(pkg=str(pkg))
-    proc = subprocess.run([sys.executable, "-c", code],
-                          capture_output=True, timeout=30)
-    out = proc.stdout.decode(errors="replace").strip()
-    err = proc.stderr.decode(errors="replace").strip()
-    if proc.returncode == 0 and "loaded: True" in out:
-        log.finding(f"Foundation loads RTFD: {out}")
-    elif "ModuleNotFoundError" in err or "ImportError" in err:
-        log.finding(f"PyObjC Foundation NOT importable with {sys.executable} "
-                    "- run this script with the venv python that has rumps")
-    else:
-        log.finding(f"Foundation probe FAILED rc={proc.returncode}: "
-                    f"{out or err[:300]}")
-    log.line("    (trait constants get verified by step 7 on a bold note)")
+    if isinstance(entries, dict):
+        entries = next((v for v in entries.values() if isinstance(v, list)), [])
+    log.line("  For each note: open it in Stickies, check the Color menu, and")
+    log.line("  confirm the engine's name. Adjust _HUE_BANDS in stickies.py if not.")
+    log.line("")
+    log.line(f"  {'uuid8':<9} {'hex':<8} {'hue':>5} {'sat':>5} {'val':>5}  engine says")
+    seen = {}
+    for entry in entries:
+        color = entry.get("StickyColor") if isinstance(entry, dict) else None
+        if not isinstance(color, dict):
+            continue
+        r, g, b = (float(color.get(k, 0)) for k in ("Red", "Green", "Blue"))
+        h, sat, val = colorsys.rgb_to_hsv(r, g, b)
+        name, hex_code = classify_color(r, g, b)
+        uuid8 = str(entry.get("UUID", "?")).replace("-", "")[:8].lower()
+        log.line(f"  {uuid8:<9} {hex_code:<8} {h * 360:5.0f} {sat:5.2f} {val:5.2f}  {name}")
+        seen.setdefault(name, set()).add(hex_code)
+    log.finding(f"palette names in use: {sorted(seen)} "
+                f"(need all six for full calibration)")
+    ambiguous = {k: v for k, v in seen.items() if len(v) > 1}
+    if ambiguous:
+        log.finding(f"one name covers several hex values - fine if they are "
+                    f"the same colour, suspicious otherwise: {ambiguous}")
 
 
 # --- step 7 ----------------------------------------------------------------
@@ -317,9 +332,9 @@ def step_7_converters(log, args):
     if pkg is None:
         log.finding("no packages to convert")
         return
-    log.line(f"Package: {pkg.name}  (pick a BOLD+italic note for the real "
-             "trait test; use --stickies-dir + a copy to control which)")
-    for tier in ("foundation", "textutil", "text"):
+    log.line(f"Package: {pkg.name}  (to test a specific note, copy it and "
+             "the state file to a folder and pass --stickies-dir)")
+    for tier in ("textutil", "text"):
         try:
             markdown, attachments = convert(str(pkg), tier)
             log.line(f"\n  --- {tier} ---")
@@ -330,8 +345,8 @@ def step_7_converters(log, args):
         except Exception as error:
             log.finding(f"tier '{tier}' failed: {type(error).__name__}: "
                         f"{str(error)[:200]}")
-    log.finding("compare emphasis between tiers: if 'foundation' shows ** on "
-                "the wrong runs, fix _TRAIT_BOLD/_TRAIT_ITALIC in convert.py")
+    log.finding("textutil tier should show ** / * on the bold/italic runs and "
+                "single-spaced lines; text tier is the plain floor")
 
 
 # --- step 8 ----------------------------------------------------------------
@@ -362,7 +377,7 @@ def step_8_capture(log, args):
 
 
 STEPS = {1: step_1_container, 2: step_2_anatomy, 3: step_3_state,
-         4: step_4_watch, 5: step_5_textutil, 6: step_6_foundation,
+         4: step_4_watch, 5: step_5_textutil, 6: step_6_colors,
          7: step_7_converters, 8: step_8_capture}
 
 

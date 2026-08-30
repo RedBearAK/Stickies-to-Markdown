@@ -28,7 +28,7 @@ DEFAULT_STICKIES_DIR = (
 
 FILENAME_STYLES = ("slug-uuid", "uuid")
 ON_DELETE_CHOICES = ("tombstone", "delete", "keep")
-CONVERTER_CHOICES = ("auto", "foundation", "textutil", "text")
+CONVERTER_CHOICES = ("auto", "textutil", "text")
 FLAVOR_CHOICES = ("generic", "obsidian")
 
 
@@ -79,7 +79,7 @@ class Config:
             "front_matter": True,
             "flavor": "generic",                    # or "obsidian"
             "read_only_output": True,               # chmod 444 mirror files
-            "converter": "auto",                    # foundation|textutil|text
+            "converter": "auto",                    # textutil|text
             "log_file": os.path.join(self.config_dir, LOG_FILENAME),
             "log_level": "INFO",
             "log_max_size": 10,                     # MB

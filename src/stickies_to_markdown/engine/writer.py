@@ -206,6 +206,7 @@ class Writer:
                 MARKER_KEY: MARKER_VALUE,
                 "stickies-uuid": note.uuid,
                 "color": note.color,
+                "color-hex": note.color_hex or "",
                 "created": self._iso(getattr(rtf_stat, "st_birthtime", None)
                                      or (rtf_stat and rtf_stat.st_mtime)),
                 "modified": self._iso(rtf_stat and rtf_stat.st_mtime),

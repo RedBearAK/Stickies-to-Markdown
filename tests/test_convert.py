@@ -87,11 +87,59 @@ def test_html_walker():
     return ok
 
 
+COCOA_HTML = """<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="Generator" content="Cocoa HTML Writer">
+  <title></title>
+  <style type="text/css">
+    p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px 'Lucida Grande'}
+    span.s1 {color: #003ecc}
+    ol.ol1 {list-style-type: decimal}
+  </style>
+</head>
+<body>
+<p class="p1">Helpful Excel Functions</p>
+<p class="p2"><br></p>
+<p class="p1">=MID(<span class="s1">B2</span>,FIND(" ",B2)+1)</p>
+<p class="p1"><b>Bold line</b> then <i>italic</i><span class="Apple-converted-space"> </span>end</p>
+<p class="p5"><span class="s4"></span><br></p>
+<ol class="ol1"><li class="li10">first</li><li class="li10">second</li></ol>
+<p class="p1"><img src="file:///tmp/x.rtfd/pivot.png" alt="pivot.png"></p>
+</body>
+</html>"""
+
+
+def test_cocoa_html_writer_shape():
+    """Built from real textutil output (2026-08-30 log)."""
+    markdown = html_to_markdown(COCOA_HTML)
+    lines = markdown.strip("\n").split("\n")
+    ok = check("Helpful Excel Functions" in markdown,
+               "body text survives <head> with void <meta> tags",
+               f"lost body: {markdown!r}")
+    ok &= check('=MID(B2,FIND(" ",B2)+1)' in markdown,
+                "colour spans are transparent", f"{markdown!r}")
+    ok &= check("**Bold line** then *italic* end" in markdown,
+                "b/i and Apple-converted-space handled", f"{markdown!r}")
+    ok &= check(lines[0] == "Helpful Excel Functions" and lines[1] == "",
+                "<p> is a line break; <p><br></p> is the blank line",
+                f"{lines[:3]}")
+    ok &= check("1. first" in markdown and "2. second" in markdown,
+                "ol/li -> numbered list", f"{markdown!r}")
+    ok &= check("@@ATTACHMENT:pivot.png@@" in markdown,
+                "img src basename -> attachment marker", f"{markdown!r}")
+    ok &= check("\n\n\n" not in markdown,
+                "no double-spacing of consecutive lines", f"{markdown!r}")
+    return ok
+
+
 if __name__ == "__main__":
     tests = [test_paragraphs_and_escapes, test_destinations_skipped,
              test_unicode_and_emoji, test_empty_note_is_empty,
              test_convert_entry_point_falls_through,
-             test_list_attachments_ignores_rtf_and_hidden, test_html_walker]
+             test_list_attachments_ignores_rtf_and_hidden, test_html_walker,
+             test_cocoa_html_writer_shape]
     exit(0 if run_suite("conversion tests", tests) else 1)
 
 

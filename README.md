@@ -15,7 +15,7 @@ Stickies (source of truth)  ──▶  Synced_from_Stickies/   (annotated .md)
 
 ## Status: Phase 1 (one-shot export)
 
-Working today, on the built-in tier-3 converter (any OS):
+Working today, verified against a real Stickies container on macOS:
 
     stickies2md --once                # export every note, then exit
     stickies2md --once --dry-run     # show what would change, write nothing
@@ -23,8 +23,8 @@ Working today, on the built-in tier-3 converter (any OS):
 The live watcher (`--start`), interactive settings menu, and macOS menu bar
 app arrive in Phase 2, built on the same engine patterns as
 [Duplicate-File-Preventer](https://github.com/RedBearAK/Duplicate-File-Preventer).
-The macOS-only converter tiers (Foundation, textutil) are written but not
-yet verified on a Mac — see `dev_notes/FIRST_SESSION_CHECKLIST.md`.
+Remaining verification items (Stickies' live-write pattern, the last five
+colour bands) are tracked in `dev_notes/MAC_FINDINGS.md`.
 
 ## Setup
 
@@ -34,9 +34,12 @@ stickies2md --set output_dir=~/Obsidian/Vault/Synced_from_Stickies
 stickies2md --once
 ```
 
-On macOS the terminal (or, later, the app bundle) needs **Full Disk Access**
-to read the Stickies container; a denied grant shows up as exactly one
-symptom, `permission denied`, which the tool names explicitly.
+On macOS the first read of the Stickies container triggers a
+*"would like to access data from other apps"* prompt, attributed to the app
+hosting your terminal (Terminal.app, VS Code...). Allow it. Don't Allow is
+a silent, permanent deny (`tccutil reset` to get the prompt back); the tool
+reports it as `permission denied` rather than failing quietly. Full Disk
+Access is **not** required.
 
 ## The output format (the public interface)
 
@@ -47,7 +50,8 @@ contract** — scripts and future consumers may rely on them:
 ---
 synced-by: stickies-to-markdown      # ownership marker (see Safety)
 stickies-uuid: 5A2B...-...           # identity, survives retitling
-color: yellow                        # from .SavedStickiesState, or "unknown"
+color: yellow                        # palette name classified from the RGB below
+color-hex: "#fef49c"                 # the exact StickyColor from .SavedStickiesState
 created: 2026-08-30T09:12:03
 modified: 2026-08-30T14:02:41
 source: /Users/you/Library/.../5A2B....rtfd
@@ -102,15 +106,16 @@ or `~/.config/stickies-to-markdown/` (Linux), JSON, hot-reload-friendly.
 
 ## Converter tiers
 
-1. **foundation** — `NSAttributedString` via PyObjC: best fidelity
-   (bold/italic as `**`/`*`). macOS only; unverified until first Mac run.
-2. **textutil** — Apple's built-in RTF→HTML, walked into Markdown
-   (headings, lists, emphasis, images). macOS only.
-3. **text** — a small stdlib RTF text extractor: paragraphs, unicode
+1. **textutil** — Apple's built-in RTF→HTML (Cocoa HTML Writer), walked
+   into Markdown: bold/italic, ordered and unordered lists, attachments.
+   macOS only. Verified against real Stickies output.
+2. **text** — a small stdlib RTF text extractor: paragraphs, unicode
    (including emoji), attachments listed. Runs anywhere; this is what the
    Linux test suite exercises and the floor that can never produce nothing.
 
-`auto` tries each in order and falls through on any failure.
+`auto` tries textutil then text. There is no PyObjC tier: the RTFD loader on
+`NSAttributedString` lives in AppKit, which the engine is not allowed to
+import (see `dev_notes/MAC_FINDINGS.md`).
 
 ## Development
 

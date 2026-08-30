@@ -23,12 +23,26 @@ def test_colors_from_state_file():
     with Sandbox() as box:
         notes = stickies.enumerate_notes(str(box.container))
         colors = {n.uuid8: n.color for n in notes.values()}
-        ok = check(colors.get("11111111") == "yellow" and
-                   colors.get("22222222") == "blue" and
-                   colors.get("66666666") == "gray",
-                   "integer colours mapped through the palette",
+        expected = {"11111111": "yellow", "22222222": "blue", "33333333": "green",
+                    "44444444": "pink", "55555555": "purple", "66666666": "gray"}
+        ok = check(all(colors.get(k) == v for k, v in expected.items()),
+                   "StickyColor RGB classified into all six palette names",
                    f"colours: {colors}")
+        yellow = notes["11111111-AAAA-4AAA-8AAA-111111111111"]
+        ok &= check(yellow.color_hex == "#fef49c" and yellow.order == 1,
+                    "hex colour and ZOrder carried through",
+                    f"hex={yellow.color_hex} order={yellow.order}")
         return ok
+
+
+def test_classify_real_yellow():
+    # The one value observed on a real Mac (2026-08-30 log).
+    name, hex_code = stickies.classify_color(0.996078431372549,
+                                             0.9568627450980393,
+                                             0.611764705882353)
+    return check(name == "yellow" and hex_code == "#fef49c",
+                 "real-world StickyColor classifies as yellow",
+                 f"got {name} {hex_code}")
 
 
 def test_missing_state_file_is_fine():
@@ -88,6 +102,7 @@ def test_container_probe():
 
 if __name__ == "__main__":
     tests = [test_enumerates_all_packages, test_colors_from_state_file,
+             test_classify_real_yellow,
              test_missing_state_file_is_fine, test_truncated_state_file_is_fine,
              test_non_note_entries_ignored, test_container_probe]
     exit(0 if run_suite("stickies container tests", tests) else 1)

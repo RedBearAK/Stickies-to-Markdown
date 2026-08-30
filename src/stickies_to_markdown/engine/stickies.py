@@ -1,25 +1,30 @@
 """
 Read-only view of Apple Stickies' storage (handoff §4, §5.1).
 
-Post-Catalina layout, to be verified on the target Mac (checklist §7):
+Verified on macOS 2026-08-30 (dev_notes/MAC_FINDINGS.md):
 
     <stickies_dir>/
         <UUID>.rtfd/TXT.rtf [+ attachments]     one package per note
-        .SavedStickiesState                     plist: colour/order/geometry
+        .SavedStickiesState                     binary plist, top level is a
+                                                LIST of per-note dicts
+
+Per-note dict keys seen: UUID, StickyColor / ControlColor / HighlightColor /
+SpineColor (each {Red, Green, Blue, Alpha} floats 0..1), Frame, ExpandedSize,
+ExpandFrameY, Floating, Translucent, ZOrder, SpellCheckingTypes.
+
+The colour is a float RGB, not an enum, so it is classified by hue into the
+classic palette names. The bands were calibrated on one real note (yellow);
+dev_notes/mac_verify.py step 6 prints every note's hue/saturation and the
+guessed name so the other five can be confirmed and the bands adjusted.
 
 Nothing in this module ever writes inside the container. The state file is
-read defensively: reports exist of Stickies truncating it mid-write, so a
-missing or unparseable state file must never block exporting the .rtfd
-contents - colour just falls back to "unknown".
-
-The real key names inside .SavedStickiesState are UNVERIFIED (checklist §7
-step 3). _color_from_entry() therefore probes several plausible spellings
-and value shapes; record the real ones in dev_notes once observed, then
-tighten this.
+read defensively: a missing or unparseable one must never block exporting
+the .rtfd contents - colour just falls back to "unknown".
 """
 
 import os
 import re
+import colorsys
 import plistlib
 
 from stickies_to_markdown.engine.logsetup import get_logger
@@ -32,23 +37,37 @@ _UUID_RE = re.compile(
     r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-"
     r"[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$")
 
-# Classic Stickies palette. Integer mappings are a guess pending checklist
-# §7 step 3; string values pass through lowercased.
-_COLOR_NAMES = ("yellow", "blue", "green", "pink", "purple", "gray")
-_COLOR_KEY_CANDIDATES = ("color", "Color", "colour", "noteColor", "StickyColor")
-_UUID_KEY_CANDIDATES = ("uuid", "UUID", "noteUUID", "identifier", "ID")
+COLOR_NAMES = ("yellow", "blue", "green", "pink", "purple", "gray")
+
+# Hue bands in degrees (colorsys hue * 360). Below GRAY_SATURATION the
+# colour is grey regardless of hue. Verified: yellow at ~54 degrees. The
+# others are hue-theory placements pending step-6 calibration.
+GRAY_SATURATION = 0.12
+_HUE_BANDS = (
+    (20, 75, "yellow"),
+    (75, 170, "green"),
+    (170, 260, "blue"),
+    (260, 305, "purple"),
+    (305, 360, "pink"),
+    (0, 20, "pink"),
+)
 
 
 class Note:
     """One sticky: identity, package path, and state-file metadata."""
 
-    __slots__ = ("uuid", "rtfd_path", "color", "order")
+    __slots__ = ("uuid", "rtfd_path", "color", "color_hex", "order",
+                 "floating", "translucent")
 
-    def __init__(self, uuid, rtfd_path, color="unknown", order=None):
+    def __init__(self, uuid, rtfd_path, color="unknown", color_hex="",
+                 order=None, floating=False, translucent=False):
         self.uuid = uuid
         self.rtfd_path = rtfd_path
         self.color = color
+        self.color_hex = color_hex
         self.order = order
+        self.floating = floating
+        self.translucent = translucent
 
     @property
     def uuid8(self):
@@ -71,8 +90,10 @@ def container_readable(stickies_dir):
         os.listdir(stickies_dir)
         return True, ""
     except PermissionError:
-        return False, ("permission denied - grant Full Disk Access to the "
-                       "app or terminal running this tool")
+        return False, ("permission denied - the app or terminal running this "
+                       "tool needs access to Stickies' data (System Settings "
+                       "> Privacy & Security); a dismissed prompt is a "
+                       "permanent deny until 'tccutil reset'")
     except FileNotFoundError:
         return False, f"not found: {stickies_dir}"
     except OSError as error:
@@ -81,9 +102,9 @@ def container_readable(stickies_dir):
 
 def enumerate_notes(stickies_dir, logger=None):
     """
-    uuid -> Note for every <UUID>.rtfd in the container, enriched with
-    colour/order from the state file when available. Raises OSError only
-    for the top-level listing; per-note problems are logged and skipped.
+    uuid -> Note for every <UUID>.rtfd in the container, enriched from the
+    state file when available. Raises OSError only for the top-level
+    listing; per-note problems are logged and skipped.
     """
     logger = logger or get_logger()
     notes = {}
@@ -104,18 +125,49 @@ def enumerate_notes(stickies_dir, logger=None):
     for uuid, note in notes.items():
         meta = state.get(uuid)
         if meta:
-            note.color = meta.get("color", "unknown")
-            note.order = meta.get("order")
+            note.color = meta["color"]
+            note.color_hex = meta["color_hex"]
+            note.order = meta["order"]
+            note.floating = meta["floating"]
+            note.translucent = meta["translucent"]
     return notes
+
+
+# --- colour ----------------------------------------------------------------
+
+def classify_color(red, green, blue):
+    """(name, hex) for float RGB 0..1, by saturation then hue band."""
+    hue, saturation, _value = colorsys.rgb_to_hsv(red, green, blue)
+    hex_code = "#{:02x}{:02x}{:02x}".format(
+        round(red * 255), round(green * 255), round(blue * 255))
+    if saturation < GRAY_SATURATION:
+        return "gray", hex_code
+    degrees = hue * 360.0
+    for low, high, name in _HUE_BANDS:
+        if low <= degrees < high:
+            return name, hex_code
+    return "unknown", hex_code
+
+
+def color_from_entry(entry):
+    """(name, hex) from a per-note state dict; ('unknown', '') if absent."""
+    value = entry.get("StickyColor")
+    if isinstance(value, dict):
+        try:
+            return classify_color(float(value.get("Red", 0)),
+                                  float(value.get("Green", 0)),
+                                  float(value.get("Blue", 0)))
+        except (TypeError, ValueError):
+            pass
+    return "unknown", ""
 
 
 # --- .SavedStickiesState ---------------------------------------------------
 
 def read_state(stickies_dir, logger=None):
     """
-    uuid -> {"color": str, "order": int|None}, parsed defensively from
-    .SavedStickiesState. Any failure returns {} (colour falls back to
-    "unknown"); it must never block an export.
+    uuid -> {color, color_hex, order, floating, translucent}, parsed
+    defensively. Any failure returns {} - it must never block an export.
     """
     logger = logger or get_logger()
     path = os.path.join(stickies_dir, STATE_FILENAME)
@@ -128,24 +180,27 @@ def read_state(stickies_dir, logger=None):
         logger.warning(f"State file unreadable ({error}); colours unknown")
         return {}
 
-    entries = _find_note_entries(data)
+    entries = _note_entries(data)
     state = {}
-    for order, entry in enumerate(entries):
-        uuid = _uuid_from_entry(entry)
-        if not uuid:
+    for index, entry in enumerate(entries):
+        uuid = entry.get("UUID")
+        if not (isinstance(uuid, str) and _UUID_RE.match(uuid)):
             continue
+        name, hex_code = color_from_entry(entry)
+        order = entry.get("ZOrder")
         state[uuid.upper()] = {
-            "color": _color_from_entry(entry),
-            "order": order,
+            "color": name,
+            "color_hex": hex_code,
+            "order": order if isinstance(order, int) else index,
+            "floating": bool(entry.get("Floating", False)),
+            "translucent": bool(entry.get("Translucent", False)),
         }
     return state
 
 
-def _find_note_entries(data):
-    """
-    The list of per-note dicts, wherever the plist hides it: the top level
-    may be that list, or a dict containing it under an unknown key.
-    """
+def _note_entries(data):
+    """The per-note dicts: the top level IS the list (verified); tolerate
+    a dict wrapper in case a future macOS adds one."""
     if isinstance(data, list):
         return [e for e in data if isinstance(e, dict)]
     if isinstance(data, dict):
@@ -157,31 +212,6 @@ def _find_note_entries(data):
                     best = dicts
         return best
     return []
-
-
-def _uuid_from_entry(entry):
-    for key in _UUID_KEY_CANDIDATES:
-        value = entry.get(key)
-        if isinstance(value, str) and _UUID_RE.match(value):
-            return value
-    # Fall back to any UUID-shaped string value under any key.
-    for value in entry.values():
-        if isinstance(value, str) and _UUID_RE.match(value):
-            return value
-    return None
-
-
-def _color_from_entry(entry):
-    for key in _COLOR_KEY_CANDIDATES:
-        if key not in entry:
-            continue
-        value = entry[key]
-        if isinstance(value, str) and value.strip():
-            name = value.strip().lower()
-            return name if name in _COLOR_NAMES else name
-        if isinstance(value, int) and 0 <= value < len(_COLOR_NAMES):
-            return _COLOR_NAMES[value]
-    return "unknown"
 
 
 # End of file #
