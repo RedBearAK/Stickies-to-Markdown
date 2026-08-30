@@ -10,7 +10,6 @@ independent - a failure logs and moves on.
     python3 dev_notes/mac_verify.py                  # all applicable steps
     python3 dev_notes/mac_verify.py --steps 3,4      # just state keys + watch
     python3 dev_notes/mac_verify.py --steps 4 --watch-seconds 0   # annotated session
-    python3 dev_notes/mac_verify.py --steps 7 --package e5ff     # a specific note
     python3 dev_notes/mac_verify.py --capture ~/s2m_fixtures --capture-count 8
 
 Steps:
@@ -23,7 +22,8 @@ Steps:
     5  textutil tier-2 output on a real package
     6  colour calibration: every note's StickyColor as hue/sat + the name
        the engine assigns, for checking the hue bands in stickies.py
-    7  converter comparison: both tiers on one package via the repo engine
+    7  converter check: both tiers on EVERY package; lists which notes
+       carry bold/italic through textutil and shows those lines
     8  capture sanitised fixture candidates (only with --capture)
 
 Stdlib only. Safe on Linux with --stickies-dir pointing at test fixtures
@@ -111,16 +111,9 @@ def step_1_container(log, args):
 
 # --- step 2 ----------------------------------------------------------------
 
-_PACKAGE_PREFIX = ""     # set from --package
-
-
 def _pick_package(container, prefer_attachment=True):
     packages = sorted(p for p in Path(container).iterdir()
                       if p.suffix == ".rtfd" and p.is_dir())
-    if _PACKAGE_PREFIX:
-        wanted = [p for p in packages
-                  if p.name.lower().startswith(_PACKAGE_PREFIX.lower())]
-        return wanted[0] if wanted else None
     if prefer_attachment:
         for pkg in packages:
             extras = [f for f in pkg.iterdir()
@@ -379,7 +372,7 @@ def step_6_colors(log, args):
 # --- step 7 ----------------------------------------------------------------
 
 def step_7_converters(log, args):
-    log.section("7. Converter comparison (repo engine, all tiers)")
+    log.section("7. Converter check: every package, both tiers")
     src = Path(__file__).resolve().parent.parent / "src"
     if src.is_dir() and str(src) not in sys.path:
         sys.path.insert(0, str(src))
@@ -389,24 +382,53 @@ def step_7_converters(log, args):
         log.finding(f"repo engine not importable ({error}); run from the "
                     "repo checkout or pip install first")
         return
-    pkg = _pick_package(args.stickies_dir)
-    if pkg is None:
+    packages = sorted(p for p in Path(args.stickies_dir).iterdir()
+                      if p.suffix == ".rtfd" and p.is_dir())
+    if not packages:
         log.finding("no packages to convert")
         return
-    log.line(f"Package: {pkg.name}  (choose another with --package <uuid prefix>)")
-    for tier in ("textutil", "text"):
-        try:
-            markdown, attachments = convert(str(pkg), tier)
-            log.line(f"\n  --- {tier} ---")
-            for line in markdown.splitlines()[:15]:
-                log.line(f"    {line[:110]}")
-            log.finding(f"tier '{tier}' produced {len(markdown)} chars, "
-                        f"attachments={attachments}")
-        except Exception as error:
-            log.finding(f"tier '{tier}' failed: {type(error).__name__}: "
-                        f"{str(error)[:200]}")
-    log.finding("textutil tier should show ** / * on the bold/italic runs and "
-                "single-spaced lines; text tier is the plain floor")
+
+    import re
+    emphasis = re.compile(r"\*\*[^*\n]+\*\*|(?<![*\w])\*[^*\n]+\*(?![*\w])")
+    styled = []
+    failures = []
+    log.line(f"  {'uuid8':<9} {'textutil':>9} {'text':>7}  emphasis  first line")
+    for pkg in packages:
+        uuid8 = pkg.name[:8].lower()
+        results = {}
+        for tier in ("textutil", "text"):
+            try:
+                markdown, _attachments = convert(str(pkg), tier)
+                results[tier] = markdown
+            except Exception as error:
+                results[tier] = None
+                failures.append(f"{uuid8} {tier}: {type(error).__name__}: "
+                                f"{str(error)[:120]}")
+        tu, tx = results.get("textutil"), results.get("text")
+        runs = emphasis.findall(tu) if tu else []
+        first = next((l for l in (tu or tx or "").splitlines() if l.strip()), "")
+        log.line(f"  {uuid8:<9} {'-' if tu is None else len(tu):>9} {'-' if tx is None else len(tx):>7}  "
+                 f"{len(runs):>8}  {first[:40]}")
+        if runs:
+            styled.append((uuid8, runs, tu))
+
+    for line in failures:
+        log.finding(f"conversion failed: {line}")
+    if styled:
+        for uuid8, runs, markdown in styled:
+            log.line(f"\n  --- {uuid8}: {len(runs)} emphasised run(s) via textutil ---")
+            for line in markdown.splitlines():
+                if emphasis.search(line):
+                    log.line(f"    {line[:110]}")
+        log.finding(f"bold/italic survive textutil in {len(styled)} note(s): "
+                    f"{', '.join(u for u, _, _ in styled)} - check the marked "
+                    "lines above match what you see in Stickies")
+    else:
+        log.finding("no note produced any **bold** or *italic* through textutil. "
+                    "If one of your notes HAS bold/italic text, textutil is "
+                    "dropping it - report which note")
+    if not failures:
+        log.finding(f"both tiers converted all {len(packages)} packages")
 
 
 # --- step 8 ----------------------------------------------------------------
@@ -452,15 +474,10 @@ def main():
     parser.add_argument("--capture", metavar="DIR", default="",
                         help="step 8: stage fixture copies here")
     parser.add_argument("--capture-count", type=int, default=8)
-    parser.add_argument("--package", metavar="UUID_PREFIX", default="",
-                        help="steps 2/5/7: use the package whose UUID starts "
-                             "with this (e.g. e5ff) instead of auto-picking")
     parser.add_argument("--log", default="",
                         help="log path (default: ./stickies_verify_<ts>.log)")
     args = parser.parse_args()
     args.stickies_dir = os.path.expanduser(args.stickies_dir)
-    global _PACKAGE_PREFIX
-    _PACKAGE_PREFIX = args.package
 
     log_path = args.log or f"stickies_verify_{datetime.now():%Y%m%d-%H%M%S}.log"
     log = Log(log_path)
