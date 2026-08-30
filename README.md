@@ -80,8 +80,9 @@ linked from the body.
 - A marked file whose body no longer matches its `content-hash` was edited
   externally: it is moved to `_conflicts/` (edit preserved), then rewritten
   from Stickies. Nothing is ever clobbered.
-- A note deleted in Stickies is, per `on_delete`: moved to `_deleted/`
-  (default), deleted, or kept.
+- A note deleted in Stickies is handled per `on_delete` (see below); the
+  default archives it with a `deleted-from-stickies` timestamp so an orphan
+  is never mistaken for a live note.
 - Writes only happen when content actually changed, so sync clients and
   Obsidian stay quiet across idle re-runs.
 
@@ -97,9 +98,22 @@ linked from the body.
 | `converter` | `auto` | `foundation` → `textutil` → `text` fallback chain |
 | `flavor` | `generic` | `obsidian` adds `cssclasses` |
 | `filename_style` | `slug-uuid` | or `uuid` |
-| `on_delete` | `tombstone` | or `delete` / `keep` |
+| `on_delete` | `archive` | `mark` / `delete` / `keep` — see below |
+| `deleted_dir` | `_deleted` | archive folder; relative to `output_dir` or absolute |
 | `read_only_output` | `true` | chmod 444 mirror files |
 | `include_attachments` | `true` | copy package attachments |
+
+### When a note is deleted in Stickies
+
+| `on_delete` | what happens to the mirror file |
+| --- | --- |
+| `archive` (default) | annotated with `deleted-from-stickies: <time>`, then moved to `deleted_dir` (`--set deleted_dir=Deleted_Stickies` to rename it, or an absolute path to put it elsewhere) |
+| `mark` | annotated in place and left where it is — an orphan you can still find, filter or style (`obsidian` flavor adds a `stickies-deleted` class) |
+| `delete` | removed |
+| `keep` | untouched — an unannotated orphan |
+
+A *retitled* note is not a deletion: its old filename is removed and the
+content continues under the new name, whatever `on_delete` says.
 
 Config lives at `~/Library/Application Support/StickiesToMarkdown/` (macOS)
 or `~/.config/stickies-to-markdown/` (Linux), JSON, hot-reload-friendly.

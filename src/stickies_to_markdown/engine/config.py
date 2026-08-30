@@ -27,7 +27,14 @@ DEFAULT_STICKIES_DIR = (
     "~/Library/Containers/com.apple.Stickies/Data/Library/Stickies")
 
 FILENAME_STYLES = ("slug-uuid", "uuid")
-ON_DELETE_CHOICES = ("tombstone", "delete", "keep")
+# What happens to a mirror file when its note is deleted in Stickies:
+#   archive  move it to deleted_dir, annotated with deleted-from-stickies
+#   mark     leave it in place, annotated with deleted-from-stickies
+#   delete   remove it
+#   keep     leave it exactly as it is (an unannotated orphan)
+# "tombstone" is accepted as an alias of "archive" (earlier name).
+ON_DELETE_CHOICES = ("archive", "mark", "delete", "keep")
+ON_DELETE_ALIASES = {"tombstone": "archive"}
 CONVERTER_CHOICES = ("auto", "textutil", "text")
 FLAVOR_CHOICES = ("generic", "obsidian")
 
@@ -72,7 +79,8 @@ class Config:
             "stickies_dir": DEFAULT_STICKIES_DIR,   # auto-detected default
             "output_dir": "",                       # must be set before export
             "filename_style": "slug-uuid",          # or "uuid"
-            "on_delete": "tombstone",               # or "delete" / "keep"
+            "on_delete": "archive",                 # mark | delete | keep
+            "deleted_dir": "_deleted",              # relative to output_dir, or absolute
             "debounce_seconds": 3.0,                # per-note quiet time (watcher)
             "settle_seconds": 1.0,                  # package stops changing
             "include_attachments": True,
@@ -165,6 +173,14 @@ class Config:
     def output_dir(self):
         value = self.get("output_dir") or ""
         return os.path.expanduser(value) if value else ""
+
+    def on_delete(self):
+        value = str(self.get("on_delete") or "archive")
+        return ON_DELETE_ALIASES.get(value, value)
+
+    def deleted_dir(self):
+        value = os.path.expanduser(str(self.get("deleted_dir") or "_deleted"))
+        return value if os.path.isabs(value) else os.path.join(self.output_dir(), value)
 
     # --- hot reload --------------------------------------------------------
 

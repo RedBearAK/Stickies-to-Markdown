@@ -29,6 +29,22 @@ FLAVORS = {
 }
 
 
+DELETED_FLAVORS = {
+    "generic": {},
+    # Obsidian: a class to style orphaned notes differently (greyed banner).
+    "obsidian": {"cssclasses": ["stickies-deleted"]},
+}
+
+
+def deleted_keys(flavor):
+    """Extra keys to merge into a mirror file whose note was deleted.
+    List values are appended to any existing list under that key."""
+    try:
+        return dict(DELETED_FLAVORS[flavor])
+    except KeyError:
+        raise EmitterError(f"Unknown flavor: {flavor!r}") from None
+
+
 def flavor_keys(flavor, note):
     """Merged extra keys for `flavor`, raising on collisions."""
     try:

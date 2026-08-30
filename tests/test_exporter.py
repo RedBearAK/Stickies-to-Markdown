@@ -80,17 +80,99 @@ def test_modified_note_rewrites_exactly_one_file():
         return ok
 
 
-def test_deleted_note_tombstones():
-    with Sandbox() as box:
+def _delete_project_note(box):
+    import shutil
+    shutil.rmtree(box.container / "22222222-BBBB-4BBB-8BBB-222222222222.rtfd")
+
+
+def test_deleted_note_archives_with_annotation():
+    with Sandbox() as box:          # default policy: archive
         _export(box)
-        import shutil
-        shutil.rmtree(box.container / "22222222-BBBB-4BBB-8BBB-222222222222.rtfd")
+        _delete_project_note(box)
         _export(box)
-        tombstone = box.output / "_deleted" / "project-ideas--22222222.md"
-        ok = check(tombstone.is_file(), "vanished note moved to _deleted/",
-                   f"missing: {tombstone}")
+        archived = box.output / "_deleted" / "project-ideas--22222222.md"
+        ok = check(archived.is_file(), "vanished note moved to _deleted/",
+                   f"missing: {archived}")
+        keys, body = split_front_matter(archived.read_text(encoding="utf-8"))
+        ok &= check(keys.get("deleted-from-stickies", "").startswith("20"),
+                    "archived file annotated with deleted-from-stickies",
+                    f"{keys}")
+        ok &= check("Important" in body and keys.get("synced-by") == "stickies-to-markdown",
+                    "body and other keys byte-preserved", f"{body!r}")
         ok &= check(len(box.mirror_files()) == 6, "mirror root has 6 files",
                     f"{[f.name for f in box.mirror_files()]}")
+        # "tombstone" still accepted as an alias
+        ok &= check(box.config.detached(on_delete="tombstone").on_delete() == "archive",
+                    "'tombstone' aliases to 'archive'", "alias broken")
+        return ok
+
+
+def test_on_delete_mark_annotates_in_place():
+    with Sandbox(on_delete="mark", flavor="obsidian") as box:
+        _export(box)
+        _delete_project_note(box)
+        _export(box)
+        marked = box.output / "project-ideas--22222222.md"
+        ok = check(marked.is_file() and len(box.mirror_files()) == 7,
+                   "mark: file stays in place", f"{[f.name for f in box.mirror_files()]}")
+        keys, _ = split_front_matter(marked.read_text(encoding="utf-8"))
+        ok &= check(keys.get("deleted-from-stickies", "").startswith("20"),
+                    "annotated with deleted-from-stickies", f"{keys}")
+        ok &= check("stickies-deleted" in keys.get("cssclasses", "")
+                    and "stickies-mirror" in keys.get("cssclasses", ""),
+                    "obsidian flavor appends stickies-deleted to cssclasses",
+                    f"{keys.get('cssclasses')}")
+        before = box.tree_signature(box.output)
+        _export(box)
+        ok &= check(before == box.tree_signature(box.output),
+                    "re-run leaves the marked orphan untouched (idempotent)",
+                    "marked file churned")
+        return ok
+
+
+def test_on_delete_delete_and_keep():
+    with Sandbox(on_delete="delete") as box:
+        _export(box)
+        _delete_project_note(box)
+        _export(box)
+        ok = check(len(box.mirror_files()) == 6
+                   and not (box.output / "_deleted").exists(),
+                   "delete: file removed, no archive folder", "unexpected files")
+    with Sandbox(on_delete="keep") as box:
+        _export(box)
+        _delete_project_note(box)
+        before = box.tree_signature(box.output)
+        _export(box)
+        ok &= check(before == box.tree_signature(box.output)
+                    and len(box.mirror_files()) == 7,
+                    "keep: orphan left byte-identical, unannotated",
+                    "keep touched the orphan")
+    return ok
+
+
+def test_custom_deleted_dir_and_collision():
+    with Sandbox(deleted_dir="Deleted_Stickies") as box:
+        _export(box)
+        _delete_project_note(box)
+        _export(box)
+        archived = box.output / "Deleted_Stickies" / "project-ideas--22222222.md"
+        ok = check(archived.is_file(), "custom relative deleted_dir honoured",
+                   f"missing: {archived}")
+        # Same filename archived twice must not overwrite the first copy.
+        archived.chmod(0o644)
+        archived.write_text(archived.read_text(encoding="utf-8") + "\nEDITED\n",
+                            encoding="utf-8")
+        again = box.output / "project-ideas--22222222.md"
+        again.write_text(
+            "---\nsynced-by: stickies-to-markdown\nstickies-uuid: "
+            "22222222-BBBB-4BBB-8BBB-222222222222\ncontent-hash: x\n---\n\nnew\n",
+            encoding="utf-8")
+        from stickies_to_markdown.engine.writer import Writer
+        Writer(box.config, EventQueue()).handle_deletions(set())
+        copies = sorted((box.output / "Deleted_Stickies").glob("project-ideas--22222222*.md"))
+        ok &= check(len(copies) == 2 and "EDITED" in archived.read_text(encoding="utf-8"),
+                    "archive collision gets a timestamp suffix; first copy intact",
+                    f"{[c.name for c in copies]}")
         return ok
 
 
@@ -193,15 +275,18 @@ def test_rename_retitles_the_file():
         ok &= check("grocery-list--11111111.md" not in names,
                     "old filename handled as a rename, not left behind",
                     f"{names}")
-        ok &= check((box.output / "_deleted" / "grocery-list--11111111.md").is_file(),
-                    "old name tombstoned per on_delete", "no tombstone")
+        ok &= check(not (box.output / "_deleted" / "grocery-list--11111111.md").exists(),
+                    "stale name removed outright, not archived (content lives on)",
+                    "stale name was archived")
         return ok
 
 
 if __name__ == "__main__":
     tests = [test_full_export_and_front_matter, test_second_run_writes_nothing,
              test_modified_note_rewrites_exactly_one_file,
-             test_deleted_note_tombstones, test_container_never_touched,
+             test_deleted_note_archives_with_annotation,
+             test_on_delete_mark_annotates_in_place, test_on_delete_delete_and_keep,
+             test_custom_deleted_dir_and_collision, test_container_never_touched,
              test_unmarked_file_is_never_touched,
              test_external_edit_quarantined_to_conflicts,
              test_read_only_mode, test_obsidian_flavor_and_uuid_style,

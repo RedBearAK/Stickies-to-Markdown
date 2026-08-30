@@ -220,11 +220,11 @@ def step_4_watch(log, args):
     log.section(f"4. Live-write behavior ({args.watch_seconds}s watch)")
     if args.watch_seconds < 40:
         log.line("    (tip: --watch-seconds 45 fits the whole sequence)")
-    log.line(">>> Sequence (do NOT create a new note - that pattern is known):")
-    log.line(">>>   1. type a few words into an EXISTING note, then wait 8 s")
+    log.line(">>> Creation and deletion patterns are KNOWN. Only edits are open.")
+    log.line(">>>   1. type a few words into an EXISTING note, wait 10 s")
     log.line(">>>   2. click a DIFFERENT note (focus change), wait 5 s")
-    log.line(">>>   3. close the edited note's window, wait 5 s")
-    log.line(">>>   4. if time remains: delete a throwaway note")
+    log.line(">>>   3. Cmd-Q Stickies - a quit forces the save, so the write")
+    log.line(">>>      mechanics show even if the timer never fired")
     log.line(">>> Watching for changes...")
     container = args.stickies_dir
     before = _tree_state(container)
@@ -245,6 +245,9 @@ def step_4_watch(log, args):
         for path in after.keys() & before.keys():
             if before[path][:3] != after[path][:3]:
                 rel = os.path.relpath(path, container)
+                if before[path][3] != after[path][3]:
+                    log.line(f"  {stamp}  BECAME {'DIR' if after[path][3] else 'FILE'} {rel}")
+                    continue
                 if after[path][3]:          # directory mtime = entry churn
                     log.line(f"  {stamp}  DIR-TOUCH {rel}")
                     continue

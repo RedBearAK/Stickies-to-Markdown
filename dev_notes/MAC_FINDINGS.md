@@ -1,7 +1,7 @@
 # Mac findings (verified, not inferred)
 
-Source: `stickies_verify_20260830-140919.log` and `-142131.log`, macOS with
-Python 3.12.13, run from VS Code's embedded terminal. Each item below replaces an
+Source: `stickies_verify_20260830-140919.log`, `-142131.log`, `-143623.log`,
+macOS with Python 3.12.13, run from VS Code's embedded terminal. Each item below replaces an
 assumption in the handoff §4 or in Phase 1 code.
 
 ## Permissions
@@ -63,9 +63,18 @@ Observed for **note creation** (second log, step 4):
 - `.SavedStickiesState` is rewritten by temp-and-rename on every save.
   Phase 2 should never react to it directly beyond a debounced colour
   refresh; the note's own package is the change signal.
-- **Editing an existing note was not captured** in either run: still
-  unknown whether `TXT.rtf` is rewritten in place or replaced. The script's
-  step 4 now steers a specific edit/focus-change/close sequence.
+- Creation was reproduced twice more (third log): flat file, then the
+  package ~3 s later, state file replaced each time.
+- **Deletion** (third log): the package directory is removed immediately.
+  `.SavedStickiesState` was *not* rewritten within the following 13 s - a
+  later step still listed the deleted UUID. The container listing is the
+  truth for existence; the state file is only consulted for colour. The
+  parser already iterates packages, not state entries, so a stale entry is
+  harmless.
+- **Editing an existing note has not been captured in three runs.** Either
+  the sequence keeps producing new notes instead, or Stickies defers edits
+  to a longer timer / window close / quit. Step 4 now ends with Cmd-Q so
+  the write mechanics show regardless of the timer.
 
 ## Colour calibration (4 of 6)
 
@@ -102,10 +111,10 @@ variants of the same hue) - not used.
 
 ## Still open
 
-- [ ] **Existing-note edit pattern** (step 4): creation is understood;
-      editing is not. Re-run `--steps 4 --watch-seconds 45` and follow the
-      on-screen sequence (type into an existing note, change focus, close
-      its window). Need: `TXT.rtf` in-place vs replaced, and the delay.
+- [ ] **Existing-note edit pattern** (step 4): creation and deletion are
+      understood; editing is not. `--steps 4 --watch-seconds 45`, type into
+      an existing note, change focus, then Cmd-Q Stickies inside the window.
+      Need: `TXT.rtf` in-place vs replaced, and whether a timer fires.
 - [ ] **Colour calibration**: purple and gray only (`--steps 6`).
 - [ ] **Bold/italic through textutil** (step 7 on a formatted note).
 - [ ] **TCC service name** for `tccutil reset` (see Permissions).

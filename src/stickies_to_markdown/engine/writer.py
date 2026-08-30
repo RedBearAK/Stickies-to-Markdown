@@ -4,7 +4,7 @@ Idempotent output into the mirror folder (handoff §5.2).
     <output_dir>/
         <slug-of-first-line>--<uuid8>.md    (or <uuid8>.md, per filename_style)
         attachments/<uuid8>/<original name>
-        _deleted/<same name>.md             on_delete = "tombstone"
+        _deleted/<same name>.md             on_delete = "archive" (dir configurable)
         _conflicts/<name>.<stamp>.md        mirror file was edited externally
 
 Rules enforced here, all from the handoff and the DFP quarantine ethos:
@@ -18,6 +18,11 @@ Rules enforced here, all from the handoff and the DFP quarantine ethos:
 - Never touch a file without this tool's front-matter marker.
 - An externally edited mirror file (body hash no longer matches its
   recorded content-hash) is quarantined to _conflicts/, never clobbered.
+- A note deleted in Stickies is handled per on_delete: "archive" (annotate
+  + move to deleted_dir), "mark" (annotate in place), "delete", or "keep"
+  (untouched orphan). The annotation is a `deleted-from-stickies` timestamp
+  so a consumer can tell an orphan from a live note. A retitled note's old
+  filename is always removed - the content lives on under the new name.
 """
 
 import os
@@ -28,14 +33,14 @@ import hashlib
 import tempfile
 
 from stickies_to_markdown.engine.events import Event
-from stickies_to_markdown.engine.emitters import flavor_keys
+from stickies_to_markdown.engine.emitters import flavor_keys, deleted_keys
 from stickies_to_markdown.engine.logsetup import get_logger
 
 
 MARKER_KEY = "synced-by"
 MARKER_VALUE = "stickies-to-markdown"
+DELETED_KEY = "deleted-from-stickies"
 ATTACHMENTS_DIR = "attachments"
-DELETED_DIR = "_deleted"
 CONFLICTS_DIR = "_conflicts"
 
 _ATTACH_MARK = re.compile(r"@@ATTACHMENT:([^@]+)@@")
@@ -85,6 +90,26 @@ def split_front_matter(text):
             key, _, value = line.partition(":")
             keys[key.strip()] = _unquote(value.strip())
     return keys, text[end + 5:]
+
+
+def _merge_key(lines, key, value):
+    """Set `key` in a list of front-matter lines; list values append to an
+    existing inline list under the same key."""
+    rendered = (("[" + ", ".join(_yaml_scalar(v) for v in value) + "]")
+                if isinstance(value, (list, tuple)) else _yaml_scalar(value))
+    for index, line in enumerate(lines):
+        if not line.startswith(key + ":"):
+            continue
+        existing = line[len(key) + 1:].strip()
+        if isinstance(value, (list, tuple)) and existing.startswith("["):
+            items = [i.strip() for i in existing[1:-1].split(",") if i.strip()]
+            items += [_yaml_scalar(v) for v in value if _yaml_scalar(v) not in items]
+            lines[index] = f"{key}: [{', '.join(items)}]"
+        else:
+            lines[index] = f"{key}: {rendered}"
+        return lines
+    lines.append(f"{key}: {rendered}")
+    return lines
 
 
 # --- naming ----------------------------------------------------------------
@@ -150,7 +175,7 @@ class Writer:
 
         previous_name = self._index().get(note.uuid)
         if previous_name and previous_name != target_name:
-            self._dispose(previous_name, reason="renamed")
+            self._remove_renamed(previous_name)
 
         existing_text = self._read_marked(target_path, note)
         if existing_text is None and os.path.exists(target_path):
@@ -188,12 +213,12 @@ class Writer:
         for uuid, name in list(self._index().items()):
             if uuid in live_uuids:
                 continue
-            self._dispose(name, reason="note deleted")
+            self._dispose(name)
             del self._index()[uuid]
             affected.append(name)
             self.events.put(Event("deleted", os.path.join(self.output_dir, name),
                                   "dry run" if self.dry_run else
-                                  self.config.get("on_delete")))
+                                  self.config.on_delete()))
         return affected
 
     # --- internals ---------------------------------------------------------
@@ -254,19 +279,60 @@ class Writer:
             shutil.move(path, conflict_path)
         return True
 
-    def _dispose(self, name, reason):
-        """Apply on_delete to an existing mirror file."""
+    def _remove_renamed(self, name):
+        """A retitled note: the stale filename goes; content lives on."""
         path = os.path.join(self.output_dir, name)
-        mode = self.config.get("on_delete", "tombstone")
-        self.logger.info(f"{reason}: {name} ({mode}{', dry run' if self.dry_run else ''})")
-        if self.dry_run or not os.path.exists(path) or mode == "keep":
+        self.logger.info(f"renamed: removing stale {name}"
+                         f"{' (dry run)' if self.dry_run else ''}")
+        if not self.dry_run and os.path.exists(path):
+            os.remove(path)
+
+    def _dispose(self, name):
+        """Apply on_delete to the mirror file of a note deleted in Stickies."""
+        path = os.path.join(self.output_dir, name)
+        policy = self.config.on_delete()
+        self.logger.info(f"note deleted: {name} -> {policy}"
+                         f"{' (dry run)' if self.dry_run else ''}")
+        if self.dry_run or not os.path.exists(path) or policy == "keep":
             return
-        if mode == "delete":
+        if policy == "delete":
             os.remove(path)
             return
-        deleted_dir = os.path.join(self.output_dir, DELETED_DIR)
-        os.makedirs(deleted_dir, exist_ok=True)
-        shutil.move(path, os.path.join(deleted_dir, name))
+        # "mark" and "archive" both annotate first.
+        self._annotate_deleted(path)
+        if policy == "archive":
+            deleted_dir = self.config.deleted_dir()
+            os.makedirs(deleted_dir, exist_ok=True)
+            target = os.path.join(deleted_dir, name)
+            if os.path.exists(target):       # earlier archive of the same name
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                target = os.path.join(deleted_dir, f"{name[:-3]}.{stamp}.md")
+            shutil.move(path, target)
+
+    def _annotate_deleted(self, path):
+        """
+        Add `deleted-from-stickies: <now>` (plus any flavor keys) to the
+        front matter, editing lines in place so everything else is byte-
+        preserved. Idempotent: an already-annotated file is left alone.
+        Returns True when the file was rewritten.
+        """
+        with open(path, "r", encoding="utf-8") as handle:
+            text = handle.read()
+        if not text.startswith("---\n"):
+            self.logger.warning(f"{os.path.basename(path)}: no front matter, "
+                                f"cannot annotate deletion")
+            return False
+        end = text.find("\n---\n", 4)
+        if end < 0:
+            return False
+        lines = text[4:end].split("\n")
+        if any(line.startswith(DELETED_KEY + ":") for line in lines):
+            return False
+        lines.append(f"{DELETED_KEY}: {self._iso(time.time())}")
+        for key, value in deleted_keys(self.config.get("flavor", "generic")).items():
+            lines = _merge_key(lines, key, value)
+        self._write_atomic(path, "---\n" + "\n".join(lines) + text[end:])
+        return True
 
     def _write_atomic(self, path, text):
         if self.dry_run:
