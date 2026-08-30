@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stickies-to-markdown"
+description = "One-way mirror of Apple Stickies notes into annotated Markdown files (Obsidian-friendly, but consumer-agnostic)."
+readme = "README.md"
+license = {text = "GPL-3.0"}
+authors = [{name = "RedBearAK"}]
+keywords = ["stickies", "markdown", "obsidian", "notes", "macos", "export"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Environment :: MacOS X",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Utilities",
+]
+# 3.9 floor to match Duplicate-File-Preventer; Phase 1 is stdlib-only.
+requires-python = ">=3.9"
+dynamic = ["version", "dependencies"]
+
+[project.urls]
+Homepage = "https://github.com/RedBearAK/stickies-to-markdown"
+
+[project.scripts]
+stickies2md = "stickies_to_markdown.__main__:main"
+
+[project.optional-dependencies]
+# Phase 2: menubar = ["rumps>=0.4 ; sys_platform == 'darwin'"]
+dev = ["pytest>=7.0.0"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["stickies_to_markdown*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "stickies_to_markdown._version.__version__"}
+dependencies = {file = ["requirements.txt"]}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "--tb=short"
+filterwarnings = [
+    "ignore:Test functions should return None",
+    "ignore::pytest.PytestReturnNotNoneWarning",
+]

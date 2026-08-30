@@ -1,0 +1,2 @@
+# Phase 1 (--once export) is stdlib-only. Uncomment when Phase 2 lands:
+# watchdog>=4.0
