@@ -49,7 +49,7 @@ include = ["stickies_to_markdown*"]
 
 [tool.setuptools.package-data]
 stickies_to_markdown = ["frontends/icons/*.png", "frontends/icons/*.icns",
-                        "frontends/icons/*.svg", "frontends/launcher_template.c"]
+                        "frontends/launcher_template.c"]
 
 [tool.setuptools.dynamic]
 version = {attr = "stickies_to_markdown._version.__version__"}

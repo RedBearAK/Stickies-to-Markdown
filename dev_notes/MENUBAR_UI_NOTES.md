@@ -45,8 +45,12 @@ Rules of thumb for alert text in this app:
   waits (never exec), so the bundle is the responsible process for TCC.
   `BUNDLE_ID` is a one-way door.
 - `frontends/icons/` - status PNGs (+@2x) are colour, not template
-  images, so they can carry the state colour. `make_app_icon.py`
-  regenerates `AppIcon.icns` with Pillow.
+  images, so they can carry the state colour. `make_icons.py` regenerates
+  all of them plus `AppIcon.icns` with Pillow. They are this app's own
+  sticky-silhouette artwork; the first Phase 2 build shipped DFP's status
+  PNGs copied verbatim (the handoff called them "generic" glyphs), so the
+  menu bar showed DFP's icon while Finder showed ours. Lesson: never copy
+  another app's icon files, even ones that look like abstract shapes.
 - First-run expectation: the "access data from other apps" prompt in the
   app's name. Don't Allow = silent permanent deny -> yellow icon with
   "permission denied" in the status line; `tccutil reset` to re-prompt.

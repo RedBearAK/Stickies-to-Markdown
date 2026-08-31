@@ -23,8 +23,9 @@ from stickies_to_markdown.engine import Config, Engine, EngineError
 
 
 # Full-colour icons rather than macOS "template" images, so the status
-# corner can carry colour: green dot = watching, red square = stopped,
-# yellow triangle = problem. AppKit picks the @2x file on Retina.
+# colour survives: green sticky = watching, grey sticky = stopped, amber
+# sticky with "!" = problem. This app's own artwork (icons/make_icons.py),
+# distinct from DFP's dot/square/triangle. AppKit picks @2x on Retina.
 ICON_DIR = os.path.join(os.path.dirname(__file__), "icons")
 ICON_WATCHING = os.path.join(ICON_DIR, "watching.png")
 ICON_STOPPED = os.path.join(ICON_DIR, "stopped.png")
