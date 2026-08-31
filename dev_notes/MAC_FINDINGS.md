@@ -32,8 +32,24 @@ assumption in the handoff §4 or in Phase 1 code.
   `codesign -dr -` on the bundle shows why: the ad-hoc designated
   requirement is a bare `cdhash H"..."`. Fix shipped: ad-hoc signing now
   sets an explicit `designated => identifier "com.redbearak.stickies-to-markdown"`
-  requirement. If tccd still session-scopes it, the next step is a signing
-  certificate (`--sign-identity`), which the tool could create itself.
+  requirement. **Tried; tccd still session-scopes it** - the identifier in
+  the requirement is not what it keys on; the absence of a signing
+  certificate is.
+- **Resolution (verified 2026-08-30): Full Disk Access.** FDA
+  (`kTCCServiceSystemPolicyAllFiles`) persists by Bundle ID for any
+  signature and is a superset of App Data, so once granted the per-launch
+  prompt never fires again. The app now does what other Mac apps do:
+  probe an FDA-only canary (`~/Library/Application Support/com.apple.TCC/TCC.db`)
+  before touching Stickies - silent, because FDA has no prompt; the refused
+  probe makes tccd list the app in the FDA pane switched off - then offer
+  to open the pane (`x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`),
+  poll the canary, and start when the switch is flipped. Confirmed: dialog
+  -> pane -> switch (Touch ID) -> watching; second launch silent.
+  `--self-sign` remains as an untested narrow-permission alternative.
+- **Applies to DFP only if it watches another app's container.** Ordinary
+  folder services (Desktop/Documents/Downloads, Dropbox) persist against an
+  ad-hoc signature. Port the probe + pane flow as a reaction to
+  PermissionError on a watched path, not as an unconditional check.
 - `TCC.db` cannot be read even with sudo on this macOS (authorization
   denied); the unified log is the only view into decisions.
 
