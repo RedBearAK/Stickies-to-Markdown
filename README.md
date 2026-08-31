@@ -95,10 +95,11 @@ synced-at: 2026-08-30T14:02:44
 ---
 ```
 
-Consumer-specific keys are added only when a **flavor** is configured
-(`--set flavor=obsidian` adds `cssclasses: [stickies-mirror, sticky-yellow]`
-for CSS-snippet styling). The generic keys appear in every flavor; flavors
-only ever add.
+Consumer-specific keys are added only when an output's **flavor** says so
+(`obsidian` adds `cssclasses: [stickies-mirror, sticky-yellow]`). The generic
+keys appear in every flavor; flavors only ever add. `extras/obsidian/`
+holds a CSS snippet that turns those classes into a colour tint and a
+"mirrored from Stickies" banner - no plugin needed.
 
 Files are named `<slug-of-first-line>--<uuid8>.md` (or `<uuid8>.md` with
 `filename_style=uuid`). Attachments are copied to `attachments/<uuid8>/` and
@@ -155,7 +156,14 @@ stickies2md --set vault.on_delete=mark             # NAME.KEY for an output
 stickies2md --add-output plain=~/Dropbox/Notes     # then --set plain.flavor=...
 stickies2md --remove-output plain                  # the folder is left alone
 stickies2md --once --output-dir /tmp/check         # one folder, this run only
+stickies2md --purge-mirror DIR [--yes]             # remove only what the tool wrote in DIR
 ```
+
+Give each output its **own subfolder** (e.g. `<vault>/Synced_from_Stickies`);
+the tool writes straight into the folder you name, and the menu warns when
+that folder is a vault root or already holds other files. Pointed at the
+wrong place? `--purge-mirror DIR` lists everything carrying the tool's
+marker (and their attachments) and removes only that with `--yes`.
 
 A config from before multiple outputs (top-level `output_dir`) is migrated
 into a single block named `default` the first time it is read.

@@ -109,6 +109,11 @@ class Engine:
         already watches this config. An unreadable container is reported
         (unhealthy, with the reason) rather than fatal, so the icon can
         say so while the user grants access.
+
+        Every phase logs, and any failure unwinds completely (lock
+        released, state reset) and re-raises as EngineError - a start
+        never leaves a half-initialised engine that reports "stopped"
+        while holding the lock.
         """
         with self._state_lock:
             if self._monitoring:
@@ -117,29 +122,41 @@ class Engine:
                 raise EngineError(
                     f"the watcher is already running in another process "
                     f"(PID {self.lock.holder_pid() or 'unknown'})")
-            self._ensure_logging()
-            self.logger.info("=" * 60)
-            self.logger.info(f"Stickies-to-Markdown watcher started - PID {os.getpid()}")
-            self.logger.info(f"Config: {self.config.config_file}")
-            self.logger.info(f"Dry run: {'ON' if self.config.get('dry_run') else 'off'}")
-
-            self._last_error = None
             try:
+                self._ensure_logging()
+                self.logger.info("=" * 60)
+                self.logger.info(f"Stickies-to-Markdown watcher starting - PID {os.getpid()}")
+                self.logger.info(f"Config: {self.config.config_file}")
+                self.logger.info(f"Outputs: {', '.join(self.config.output_dirs()) or 'NONE'}")
+                self.logger.info(f"Dry run: {'ON' if self.config.get('dry_run') else 'off'}")
+
+                self._last_error = None
                 self._processor = NoteProcessor(self.config, self.events, self.counters, self.logger)
-            except ValueError as error:
+                self.logger.info("Probing the Stickies container (a permission prompt may appear)...")
+                self._probe_container()
+                self.logger.info("Container: " + ("readable" if self._container_readable
+                                                   else f"NOT readable - {self._last_error}"))
+                self._start_observer()
+                self._running = True
+                self._worker = threading.Thread(target=self._work, name="s2m-worker", daemon=True)
+                self._worker.start()
+                self._monitoring = True
+                self._started_at = time.time()
+                if export_first:
+                    self._full_export_requested = True
+                self.logger.info("Watcher running" + (" (initial export queued)" if export_first else ""))
+                self.events.put(Event("started", self.config.stickies_dir(),
+                                      "watching" if self._container_readable else "container unreadable"))
+            except Exception as error:      # noqa: BLE001 - unwind, then report
+                self.logger.error(f"Start failed: {type(error).__name__}: {error}")
+                self._running = False
+                self._stop_observer()
+                self._monitoring = False
+                self._processor = None
                 self.lock.release()
-                raise EngineError(str(error)) from None
-            self._probe_container()
-            self._start_observer()
-            self._running = True
-            self._worker = threading.Thread(target=self._work, name="s2m-worker", daemon=True)
-            self._worker.start()
-            self._monitoring = True
-            self._started_at = time.time()
-            if export_first:
-                self._full_export_requested = True
-            self.events.put(Event("started", self.config.stickies_dir(),
-                                  "watching" if self._container_readable else "container unreadable"))
+                if isinstance(error, EngineError):
+                    raise
+                raise EngineError(f"{type(error).__name__}: {error}") from error
 
     def stop(self):
         with self._state_lock:
@@ -168,6 +185,8 @@ class Engine:
                 self.logger.info(f"Watching: {directory}")
             except OSError as error:
                 self._set_error(f"cannot watch {directory}: {error}")
+        else:
+            self.logger.warning(f"Not watching {directory}: container unreadable or missing")
         self._observer.start()
 
     def _stop_observer(self):

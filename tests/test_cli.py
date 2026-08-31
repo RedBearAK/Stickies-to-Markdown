@@ -151,12 +151,30 @@ def test_install_flags_reach_the_writers():
         return ok
 
 
+def test_purge_mirror_removes_only_ours():
+    with Sandbox() as box:
+        _run(box, "--once")
+        foreign = box.output / "my-own-note.md"
+        foreign.write_text("mine\n", encoding="utf-8")
+        code, out, _ = _run(box, "--purge-mirror", str(box.output))
+        ok = check(code == 0 and "Would remove 10" in out or "Would remove 8" in out,
+                   "dry run lists what it would remove", out[-200:])
+        ok &= check(len(box.mirror_files()) == 8, "dry run removed nothing", "")
+        code, out, _ = _run(box, "--purge-mirror", str(box.output), "--yes")
+        ok &= check(code == 0 and foreign.is_file()
+                    and not any(f.name != "my-own-note.md" for f in box.mirror_files())
+                    and not (box.output / "attachments").exists(),
+                    "--yes removed our files and attachments, kept the foreign file",
+                    f"{[f.name for f in box.mirror_files()]}")
+        return ok
+
+
 if __name__ == "__main__":
     tests = [test_once_exports_and_reports, test_missing_output_dir_exits_2_with_hint,
              test_per_run_override_not_saved, test_set_roundtrip_and_validation,
              test_show_config_lists_everything, test_dry_run_flag,
              test_error_exit_code, test_start_watches_and_stops_on_sigint,
-             test_install_flags_reach_the_writers]
+             test_install_flags_reach_the_writers, test_purge_mirror_removes_only_ours]
     exit(0 if run_suite("cli tests", tests) else 1)
 
 

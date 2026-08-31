@@ -1,0 +1,58 @@
+/*
+ * Stickies-to-Markdown - Obsidian CSS snippet
+ *
+ * Install: copy into <vault>/.obsidian/snippets/ and enable it under
+ * Settings > Appearance > CSS snippets. Needs the output's flavor set to
+ * "obsidian", which adds `cssclasses: [stickies-mirror, sticky-<colour>]`
+ * to each mirrored note (and `stickies-deleted` to orphans under the
+ * "mark" deletion policy).
+ *
+ * No plugin required: cssclasses is a core Obsidian property. The tints
+ * are the real Stickies palette at low opacity; nothing here changes
+ * editing behaviour - for that, pair with a "force read mode" style
+ * plugin, since the mirror files are read-only on disk anyway.
+ */
+
+/* ---- banner: this note is a mirror ---------------------------------- */
+
+.stickies-mirror .markdown-preview-view::before,
+.stickies-mirror .cm-editor .cm-scroller::before {
+    content: "Mirrored from Stickies - edit the sticky, not this file";
+    display: block;
+    font-size: 0.8em;
+    opacity: 0.6;
+    padding: 0.2em 0.6em;
+    margin-bottom: 0.8em;
+    border-left: 3px solid var(--text-muted);
+}
+
+.stickies-deleted .markdown-preview-view::before,
+.stickies-deleted .cm-editor .cm-scroller::before {
+    content: "Deleted in Stickies - this copy is an orphan";
+    border-left-color: var(--text-error);
+}
+
+/* ---- colour tint: the sticky's colour, faintly ---------------------- */
+
+.sticky-yellow .markdown-preview-view,
+.sticky-yellow .cm-editor { background-color: rgba(254, 244, 156, 0.18); }
+
+.sticky-blue   .markdown-preview-view,
+.sticky-blue   .cm-editor { background-color: rgba(173, 244, 255, 0.18); }
+
+.sticky-green  .markdown-preview-view,
+.sticky-green  .cm-editor { background-color: rgba(178, 255, 161, 0.18); }
+
+.sticky-pink   .markdown-preview-view,
+.sticky-pink   .cm-editor { background-color: rgba(255, 199, 199, 0.18); }
+
+.sticky-purple .markdown-preview-view,
+.sticky-purple .cm-editor { background-color: rgba(182, 202, 255, 0.18); }
+
+.sticky-gray   .markdown-preview-view,
+.sticky-gray   .cm-editor { background-color: rgba(238, 238, 238, 0.25); }
+
+.stickies-deleted .markdown-preview-view,
+.stickies-deleted .cm-editor { filter: grayscale(1); opacity: 0.75; }
+
+/* End of file */

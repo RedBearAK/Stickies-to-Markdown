@@ -90,10 +90,10 @@ class StickiesApp(rumps.App):
                                  "Settings > Outputs > +\n\n"
                                  "Then Start here."))
         else:
+            bring_to_front()        # so a permission prompt is not behind everything
             try:
                 self.engine.start()
-            except EngineError as error:
-                bring_to_front()
+            except Exception as error:      # noqa: BLE001 - a callback must never die silently
                 rumps.alert(title="Cannot start", message=str(error))
         self._refresh()
 
@@ -152,8 +152,8 @@ def run_menubar(config=None):
         if engine.config.has_outputs():
             try:
                 engine.start()
-            except EngineError:
-                pass            # icon shows stopped; the menu explains on Start
+            except Exception:       # noqa: BLE001 - icon shows stopped; Start explains
+                pass
         app.run()
     finally:
         engine.stop()

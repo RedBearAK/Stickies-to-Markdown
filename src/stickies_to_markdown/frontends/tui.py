@@ -264,9 +264,12 @@ class StickiesTUI:
             self.console.clear()
             self.console.print("\n[bold]Settings[/bold]  [dim](saved on change; a running watcher picks them up)[/dim]\n")
             c = self.config
-            pandoc = pandoc_available(block=False)
-            pandoc_note = ("checking..." if pandoc is None
-                           else "available" if pandoc else "not installed")
+            if pandoc_available(block=False) is None:
+                self.console.print("[dim]Checking for pandoc...[/dim]")
+                pandoc_available()          # one-time, cached; a second or two at most
+                self.console.clear()
+                self.console.print("\n[bold]Settings[/bold]  [dim](saved on change; a running watcher picks them up)[/dim]\n")
+            pandoc_note = "available" if pandoc_available() else "not installed"
             rows = [
                 ("1", "Stickies folder", c.stickies_dir()),
                 ("2", "Converter", f"{c.get('converter')}  [dim](pandoc {pandoc_note})[/dim]"),
@@ -301,7 +304,11 @@ class StickiesTUI:
             self.console.print("\n0. Back\n")
 
             choices = [r[0] for r in rows] + letters + ["+", "0"] + (["-"] if targets else [])
-            choice = self.ask("Change which", choices=choices, default="0").upper()
+            choice = self.ask("Change which", default="0").strip().upper()
+            if choice not in choices:
+                self.console.print(f"[red]Not an option: {choice}[/red]")
+                self.pause()
+                continue
             if choice == "0":
                 return
             if choice in letters:
@@ -365,6 +372,47 @@ class StickiesTUI:
         value = self.ask(prompt, default=current).strip().strip("'\"").replace("\\ ", " ")
         return value or None
 
+    def _looks_like_someone_elses_folder(self, folder):
+        """An existing folder with foreign content (an Obsidian vault root,
+        a Documents folder) is almost never what a mirror should write
+        into; a dedicated subfolder is. Returns a reason or ""."""
+        expanded = os.path.expanduser(folder)
+        if not os.path.isdir(expanded):
+            return ""
+        try:
+            entries = os.listdir(expanded)
+        except OSError:
+            return ""
+        if ".obsidian" in entries:
+            return "this is an Obsidian vault ROOT"
+        from stickies_to_markdown.engine.writer import MARKER_VALUE
+        foreign = 0
+        for name in entries:
+            if name.startswith(".") or name in ("attachments", "_deleted", "_conflicts"):
+                continue
+            path = os.path.join(expanded, name)
+            if os.path.isdir(path):
+                foreign += 1
+                continue
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+                    if MARKER_VALUE in handle.read(2048):
+                        continue
+            except OSError:
+                pass
+            foreign += 1
+        return f"it already holds {foreign} item(s) that are not ours" if foreign else ""
+
+    def _confirm_folder(self, folder):
+        reason = self._looks_like_someone_elses_folder(folder)
+        if not reason:
+            return True
+        self.console.print(f"[yellow]Careful:[/yellow] {reason}. The mirror writes its files "
+                           f"straight into the folder you give it - a dedicated subfolder such as\n"
+                           f"    {folder.rstrip('/')}/Synced_from_Stickies\n"
+                           f"keeps them together and out of the way.")
+        return Confirm.ask("Use this folder anyway?", default=False, console=self.console)
+
     def add_output(self):
         self.console.print("\n[bold]Add an output[/bold]")
         name = self.ask("Short name (e.g. vault, plain)", default="").strip()
@@ -374,8 +422,10 @@ class StickiesTUI:
             self.console.print("[red]Names must be unique and contain no '.'[/red]")
             self.pause()
             return
+        self.console.print("[dim]Tip: give the mirror its own subfolder, e.g. "
+                           "<vault>/Synced_from_Stickies - it is created on first export.[/dim]")
         folder = self._ask_folder("Mirror folder", "")
-        if not folder:
+        if not folder or not self._confirm_folder(folder):
             return
         flavor = self.ask("Front-matter flavor", choices=list(FLAVOR_CHOICES), default="generic")
         self.config.add_target(name, folder, flavor=flavor)
@@ -445,7 +495,7 @@ class StickiesTUI:
 
     def _set_o1(self, name):
         value = self._ask_folder("Mirror folder", self.config.target(name).get("output_dir") or "")
-        if value:
+        if value and self._confirm_folder(value):
             self.config.set_target(name, "output_dir", value)
             if not os.path.isdir(os.path.expanduser(value)):
                 self.console.print("[dim]It will be created on first export.[/dim]")

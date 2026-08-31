@@ -481,4 +481,74 @@ class Writer:
         return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(timestamp))
 
 
+def purge_mirror(folder, dry_run=True):
+    """
+    Remove everything this tool wrote into `folder` and nothing else:
+    .md files carrying the marker, their attachments/<uuid8>/ folders,
+    and the tool's own _deleted/_conflicts subfolders (only files with
+    the marker inside those, then the folder if it is empty). Returns
+    (removed_paths, kept_count). Files are chmod 444 - the directory
+    permission is what removal needs.
+    """
+    folder = os.path.expanduser(folder)
+    removed = []
+    kept = 0
+    uuids = set()
+
+    def marked(path):
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+                keys, _ = split_front_matter(handle.read(4096))
+            return keys.get(MARKER_KEY) == MARKER_VALUE, keys.get("stickies-uuid", "")
+        except OSError:
+            return False, ""
+
+    def sweep(directory):
+        nonlocal kept
+        try:
+            names = sorted(os.listdir(directory))
+        except OSError:
+            return
+        for name in names:
+            path = os.path.join(directory, name)
+            if os.path.isfile(path) and name.endswith(".md"):
+                ours, uuid = marked(path)
+                if ours:
+                    uuids.add(uuid.replace("-", "")[:8].lower())
+                    removed.append(path)
+                    if not dry_run:
+                        os.remove(path)
+                    continue
+            if os.path.isfile(path):
+                kept += 1
+
+    sweep(folder)
+    for sub in (DELETED_DIR_NAMES):
+        sweep(os.path.join(folder, sub))
+    for base in [folder] + [os.path.join(folder, sub) for sub in DELETED_DIR_NAMES]:
+        attachments = os.path.join(base, ATTACHMENTS_DIR)
+        if os.path.isdir(attachments):
+            for uuid8 in sorted(os.listdir(attachments)):
+                path = os.path.join(attachments, uuid8)
+                if uuid8 in uuids and os.path.isdir(path):
+                    removed.append(path)
+                    if not dry_run:
+                        shutil.rmtree(path)
+            if not dry_run:
+                try:
+                    os.rmdir(attachments)
+                except OSError:
+                    pass
+    if not dry_run:
+        for sub in DELETED_DIR_NAMES:
+            try:
+                os.rmdir(os.path.join(folder, sub))
+            except OSError:
+                pass
+    return removed, kept
+
+
+DELETED_DIR_NAMES = ("_deleted", "_conflicts")
+
+
 # End of file #

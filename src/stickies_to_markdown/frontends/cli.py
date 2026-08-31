@@ -59,6 +59,10 @@ def build_parser():
     action.add_argument("--add-output", metavar="NAME=PATH", action="append", default=[],
                         help="add a mirror folder named NAME")
     action.add_argument("--remove-output", metavar="NAME", action="append", default=[])
+    action.add_argument("--purge-mirror", metavar="DIR",
+                        help="remove every file this tool wrote into DIR (marker-checked; "
+                             "lists first, deletes only with --yes)")
+    action.add_argument("--yes", action="store_true", help="confirm --purge-mirror")
     inst = parser.add_argument_group("install / maintain")
     inst.add_argument("--install-command", action="store_true",
                       help="write the `stickies2md` launcher stub (records this interpreter)")
@@ -101,6 +105,8 @@ def run_cli(argv):
     if args.uninstall_app:
         from stickies_to_markdown.frontends.bundle import uninstall_app
         return 0 if uninstall_app(app_dir=args.app_dir) else 1
+    if args.purge_mirror:
+        return _purge_mirror(args.purge_mirror, args.yes)
     if args.add_output or args.remove_output:
         return _edit_outputs(config, args.add_output, args.remove_output)
     if args.set:
@@ -272,6 +278,21 @@ def _apply_sets(config, assignments):
             print(f"Unknown setting: {key}\nGlobal: {', '.join(sorted(global_keys))}\n"
                   f"Per output (NAME.KEY): {', '.join(target_keys)}", file=sys.stderr)
             return 2
+    return 0
+
+
+def _purge_mirror(folder, confirmed):
+    from stickies_to_markdown.engine.writer import purge_mirror
+    if not os.path.isdir(os.path.expanduser(folder)):
+        print(f"Not a folder: {folder}", file=sys.stderr)
+        return 2
+    removed, kept = purge_mirror(folder, dry_run=not confirmed)
+    verb = "Removed" if confirmed else "Would remove"
+    for path in removed:
+        print(f"  {verb}: {os.path.relpath(path, os.path.expanduser(folder))}")
+    print(f"{verb} {len(removed)} item(s) written by this tool; {kept} other file(s) untouched.")
+    if not confirmed and removed:
+        print("Re-run with --yes to delete them.")
     return 0
 
 
