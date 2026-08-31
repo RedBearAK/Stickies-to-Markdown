@@ -43,8 +43,8 @@ def test_per_run_override_not_saved():
         other = box.root / "elsewhere"
         code, _out, _err = _run(box, "--once", "--output-dir", str(other),
                                 "--filename-style", "uuid")
-        ok = check(code == 0 and len(list(other.glob("*.md"))) == 7,
-                   "--output-dir override honoured", f"rc={code}")
+        ok = check(code == 0 and len(list((other / "Synced_from_Stickies").glob("*.md"))) == 7,
+                   "--output-dir override honoured (with the default subfolder)", f"rc={code}")
         box.config.reload()
         ok &= check(box.config.output_dirs() == [str(box.output)],
                     "override did not touch the saved config",
@@ -69,7 +69,7 @@ def test_set_roundtrip_and_validation():
                     f"{box.target.get('exclude_colors')!r}")
         code3, out3, _ = _run(box, "--set", "output_dir=/tmp/legacy")
         box.config.reload()
-        ok &= check(code3 == 0 and box.target.output_dir() == "/tmp/legacy",
+        ok &= check(code3 == 0 and box.target.base_dir() == "/tmp/legacy",
                     "legacy --set output_dir= targets the first output", f"{out3!r}")
         code4, out4, _ = _run(box, "--add-output", "plain=/tmp/plain")
         box.config.reload()

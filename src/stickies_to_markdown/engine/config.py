@@ -49,7 +49,9 @@ FILENAME_STYLES = ("slug-uuid", "uuid")
 ON_DELETE_CHOICES = ("archive", "mark", "delete", "keep")
 ON_DELETE_ALIASES = {"tombstone": "archive"}
 CONVERTER_CHOICES = ("auto", "textutil", "pandoc", "text")
-FLAVOR_CHOICES = ("generic", "obsidian")
+FLAVOR_CHOICES = ("generic", "obsidian", "floating-sticky-notes", "sticky-notes",
+                  "colorful-stickynotes")
+DEFAULT_SUBFOLDER = "Synced_from_Stickies"
 
 # One block per mirror folder. Every key is optional in the file; missing
 # ones take these defaults. `name` is the handle used by --set NAME.KEY and
@@ -57,7 +59,11 @@ FLAVOR_CHOICES = ("generic", "obsidian")
 TARGET_DEFAULTS = {
     "name": "",
     "output_dir": "",
-    "flavor": "generic",                    # or "obsidian"
+    # The mirror lives in output_dir/<subfolder>, created on first export,
+    # so pointing an output at a vault or Documents never spills files into
+    # it. "" writes directly into output_dir.
+    "subfolder": DEFAULT_SUBFOLDER,
+    "flavor": "generic",                    # one or more of FLAVOR_CHOICES, comma-separated
     "filename_style": "slug-uuid",          # or "uuid"
     "on_delete": "archive",                 # mark | delete | keep
     "deleted_dir": "_deleted",              # relative to output_dir, or absolute
@@ -104,9 +110,23 @@ class OutputTarget:
     def name(self):
         return self.data.get("name") or "default"
 
-    def output_dir(self):
+    def base_dir(self):
+        """The folder the user named, before the subfolder."""
         value = self.data.get("output_dir") or ""
         return os.path.expanduser(value) if value else ""
+
+    def subfolder(self):
+        value = self.data.get("subfolder")
+        return DEFAULT_SUBFOLDER if value is None else str(value).strip().strip("/")
+
+    def output_dir(self):
+        """Where files actually go: base/subfolder - unless the subfolder is
+        blank, or the base already IS that subfolder (no double nesting)."""
+        base = self.base_dir()
+        sub = self.subfolder()
+        if not base or not sub or os.path.basename(base.rstrip("/")) == sub:
+            return base
+        return os.path.join(base, sub)
 
     def on_delete(self):
         value = str(self.data.get("on_delete") or "archive")

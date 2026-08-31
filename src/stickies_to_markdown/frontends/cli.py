@@ -79,7 +79,8 @@ def build_parser():
     over.add_argument("--output-dir", metavar="PATH",
                       help="write to this ONE folder instead of the configured outputs")
     over.add_argument("--converter", choices=CONVERTER_CHOICES)
-    over.add_argument("--flavor", choices=FLAVOR_CHOICES)
+    over.add_argument("--flavor", metavar="NAME[,NAME]",
+                      help=f"front-matter flavor(s): {', '.join(FLAVOR_CHOICES)}")
     over.add_argument("--filename-style", choices=FILENAME_STYLES)
     over.add_argument("--on-delete", choices=ON_DELETE_CHOICES)
     return parser

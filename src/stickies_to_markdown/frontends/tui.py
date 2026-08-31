@@ -26,9 +26,10 @@ from rich.console import Console, Group
 from stickies_to_markdown._version import __version__
 from stickies_to_markdown.engine import Config, Engine, EngineError
 from stickies_to_markdown.engine.config import (
-    FILENAME_STYLES, ON_DELETE_CHOICES, CONVERTER_CHOICES, FLAVOR_CHOICES)
+    FILENAME_STYLES, ON_DELETE_CHOICES, CONVERTER_CHOICES, FLAVOR_CHOICES, DEFAULT_SUBFOLDER)
 from stickies_to_markdown.engine.stickies import COLOR_NAMES, container_readable
 from stickies_to_markdown.engine.convert import pandoc_available
+from stickies_to_markdown.engine.emitters import parse_flavors, EmitterError
 from stickies_to_markdown.frontends import installer, bundle
 from stickies_to_markdown.frontends.render import (
     uptime_str, tail_lines, follow_log, event_markup, status_summary, log_line_markup)
@@ -422,15 +423,26 @@ class StickiesTUI:
             self.console.print("[red]Names must be unique and contain no '.'[/red]")
             self.pause()
             return
-        self.console.print("[dim]Tip: give the mirror its own subfolder, e.g. "
-                           "<vault>/Synced_from_Stickies - it is created on first export.[/dim]")
-        folder = self._ask_folder("Mirror folder", "")
-        if not folder or not self._confirm_folder(folder):
+        self.console.print("[dim]Point at the vault (or any folder); the mirror is created inside it "
+                           f"as '{DEFAULT_SUBFOLDER}/' - change that on the output's screen.[/dim]")
+        folder = self._ask_folder("Folder", "")
+        if not folder:
             return
-        flavor = self.ask("Front-matter flavor", choices=list(FLAVOR_CHOICES), default="generic")
-        self.config.add_target(name, folder, flavor=flavor)
-        self.console.print(f"[green]Added output '{name}'.[/green] It will be created on first export.")
+        flavor = self._ask_flavors("generic")
+        target = self.config.add_target(name, folder, flavor=flavor)
+        self.console.print(f"[green]Added output '{name}'.[/green] Files will go to "
+                           f"{target.output_dir()} (created on first export).")
         self.pause()
+
+    def _ask_flavors(self, current):
+        self.console.print("[dim]Flavors add plugin-specific front matter; combine with commas. "
+                           f"Choices: {', '.join(FLAVOR_CHOICES)}[/dim]")
+        while True:
+            value = self.ask("Flavor(s)", default=str(current)).strip()
+            try:
+                return ", ".join(parse_flavors(value))
+            except EmitterError as error:
+                self.console.print(f"[red]{error}[/red]")
 
     def remove_output(self):
         names = [t.name for t in self.config.targets()]
@@ -452,8 +464,11 @@ class StickiesTUI:
             self.console.clear()
             self.console.print(f"\n[bold]Output '{name}'[/bold]  [dim](saved on change)[/dim]\n")
             rows = [
-                ("1", "Mirror folder", t.output_dir() or "[red]not set[/red]"),
-                ("2", "Front-matter flavor", t.get("flavor")),
+                ("1", "Folder", t.base_dir() or "[red]not set[/red]"),
+                ("13", "Subfolder (blank = write directly into the folder)",
+                 t.subfolder() or "[yellow]none[/yellow]"),
+                ("14", "-> files go to", t.output_dir() or "[red]-[/red]"),
+                ("2", "Front-matter flavor(s)", t.get("flavor")),
                 ("3", "Filename style", t.get("filename_style")),
                 ("4", "When a note is deleted (on_delete)", t.on_delete()),
                 ("5", "Archive folder (deleted_dir)", t.get("deleted_dir")),
@@ -470,9 +485,16 @@ class StickiesTUI:
                 table.add_row(f"[bold]{number}[/bold]", label, str(value))
             self.console.print(table)
             self.console.print("\n0. Back\n")
-            choice = self.ask("Change which", choices=[r[0] for r in rows] + ["0"], default="0")
+            choice = self.ask("Change which", choices=[r[0] for r in rows if r[0] != "14"] + ["0"],
+                              default="0")
             if choice == "0":
                 return
+            if choice == "13":
+                self.console.print("[dim]The mirror is created inside the folder under this name, "
+                                   "so nothing spills into a vault root. Enter '-' for none.[/dim]")
+                value = self.ask("Subfolder", default=t.subfolder() or "-").strip()
+                self.config.set_target(name, "subfolder", "" if value in ("-", "") else value)
+                continue
             if choice == "12":
                 new_name = self.ask("New name", default=name).strip()
                 if new_name and new_name != name:
@@ -494,15 +516,17 @@ class StickiesTUI:
         self.config.set_target(name, key, Confirm.ask(prompt, default=current, console=self.console))
 
     def _set_o1(self, name):
-        value = self._ask_folder("Mirror folder", self.config.target(name).get("output_dir") or "")
-        if value and self._confirm_folder(value):
+        target = self.config.target(name)
+        value = self._ask_folder("Folder", target.get("output_dir") or "")
+        if value and (target.subfolder() or self._confirm_folder(value)):
             self.config.set_target(name, "output_dir", value)
             if not os.path.isdir(os.path.expanduser(value)):
                 self.console.print("[dim]It will be created on first export.[/dim]")
                 self.pause()
 
     def _set_o2(self, name):
-        self._set_target_choice(name, "flavor", FLAVOR_CHOICES, "Front-matter flavor")
+        self.config.set_target(name, "flavor",
+                               self._ask_flavors(self.config.target(name).get("flavor")))
 
     def _set_o3(self, name):
         self._set_target_choice(name, "filename_style", FILENAME_STYLES, "Filename style")

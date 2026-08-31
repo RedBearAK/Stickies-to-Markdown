@@ -95,11 +95,25 @@ synced-at: 2026-08-30T14:02:44
 ---
 ```
 
-Consumer-specific keys are added only when an output's **flavor** says so
-(`obsidian` adds `cssclasses: [stickies-mirror, sticky-yellow]`). The generic
-keys appear in every flavor; flavors only ever add. `extras/obsidian/`
-holds a CSS snippet that turns those classes into a colour tint and a
-"mirrored from Stickies" banner - no plugin needed.
+Consumer-specific keys are added only when an output's **flavor** says so;
+flavors only ever add, and an output may combine several
+(`flavor: "obsidian, sticky-notes"`). The plugin vocabularies were read
+from each plugin's source, not guessed:
+
+| flavor | adds | for |
+| --- | --- | --- |
+| `floating-sticky-notes` | nothing — the generic `color:` key and its values are exactly what it reads | [Floating Sticky Notes](https://github.com/kasairo/floating-sticky-notes) (kasairo) |
+| `sticky-notes` | `background_color: Yellow` (capitalised; gray → `Base`) | [Sticky Notes](https://github.com/Abdo-reda/obsidian-sticky-notes-plugin) (abdo-reda) and its fork Simple Sticky Notes |
+| `colorful-stickynotes` | `colorful-sticky-bg: mint` (green → mint, purple → lavender) | [Colorful StickyNotes](https://github.com/pandanocturne/obsidian-colorful-stickynotes) |
+| `obsidian` | `cssclasses: [stickies-mirror, sticky-yellow]` | any theme, via the CSS snippet in `extras/obsidian/` — no plugin |
+
+Colorful Note Borders / Colorful Note Background match on any
+`key: value`, so a rule on `color: yellow` works with no flavor at all.
+Desktop Sticky Notes stores colours in its own settings by file path, so
+no front matter can reach it. One caveat: plugins that *write* front matter
+back into a note (Colorful StickyNotes adds its own id on first open) will
+find the mirror files read-only, which is correct — the sticky is the thing
+to edit — but expect a complaint from the plugin the first time.
 
 Files are named `<slug-of-first-line>--<uuid8>.md` (or `<uuid8>.md` with
 `filename_style=uuid`). Attachments are copied to `attachments/<uuid8>/` and
@@ -159,11 +173,12 @@ stickies2md --once --output-dir /tmp/check         # one folder, this run only
 stickies2md --purge-mirror DIR [--yes]             # remove only what the tool wrote in DIR
 ```
 
-Give each output its **own subfolder** (e.g. `<vault>/Synced_from_Stickies`);
-the tool writes straight into the folder you name, and the menu warns when
-that folder is a vault root or already holds other files. Pointed at the
-wrong place? `--purge-mirror DIR` lists everything carrying the tool's
-marker (and their attachments) and removes only that with `--yes`.
+Point an output at your vault (or any folder): the mirror is created
+**inside it as `Synced_from_Stickies/`**, so nothing spills into a vault
+root. `subfolder` on the output changes the name; blank it to write
+directly into the folder. `--purge-mirror DIR` removes only files carrying
+the tool's marker (and their attachments), for cleaning up after a folder
+mistake.
 
 A config from before multiple outputs (top-level `output_dir`) is migrated
 into a single block named `default` the first time it is read.
@@ -179,8 +194,9 @@ into a single block named `default` the first time it is read.
 | output key | default | meaning |
 | --- | --- | --- |
 | `name` | — | handle for `--set NAME.KEY` and the menu |
-| `output_dir` | — | the mirror folder |
-| `flavor` | `generic` | `obsidian` adds `cssclasses` |
+| `output_dir` | — | the folder the mirror is created inside |
+| `subfolder` | `Synced_from_Stickies` | mirror folder name inside `output_dir`; blank = none |
+| `flavor` | `generic` | one or more flavors, comma-separated (see The output format) |
 | `filename_style` | `slug-uuid` | or `uuid` |
 | `on_delete` | `archive` | `mark` / `delete` / `keep` — see below |
 | `deleted_dir` | `_deleted` | archive folder; relative to the output or absolute |

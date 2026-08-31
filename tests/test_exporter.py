@@ -9,6 +9,8 @@ Plus: conflict quarantine, unmarked-file safety, read-only mode, flavors.
 import os
 import stat
 
+from pathlib import Path
+
 from _helpers import Sandbox, check, run_suite
 
 from stickies_to_markdown.engine.events import EventQueue
@@ -232,12 +234,15 @@ def test_two_outputs_with_different_settings():
     vs generic/slug-named/archive. Each has its own index and policies."""
     with Sandbox(flavor="obsidian", filename_style="uuid",
                  exclude_colors=["gray"], on_delete="mark") as box:
-        plain = box.root / "plain"
-        box.config.add_target("plain", str(plain), flavor="generic", on_delete="archive")
+        plain_base = box.root / "plain"
+        box.config.add_target("plain", str(plain_base), flavor="generic", on_delete="archive")
+        plain = Path(box.config.target("plain").output_dir())
+        ok0 = check(plain == plain_base / "Synced_from_Stickies",
+                    "an output gets the default subfolder inside the folder given", str(plain))
         counters = _export(box)
         vault_files = sorted(f.name for f in box.mirror_files())
         plain_files = sorted(f.name for f in plain.glob("*.md"))
-        ok = check(len(vault_files) == 6 and len(plain_files) == 7,
+        ok = ok0 & check(len(vault_files) == 6 and len(plain_files) == 7,
                    "gray note excluded from one output only",
                    f"vault={vault_files} plain={plain_files}")
         ok &= check(all(len(n) == 11 for n in vault_files)
@@ -286,6 +291,28 @@ def test_legacy_flat_config_migrates():
         ok &= check("outputs" in on_disk and "output_dir" not in on_disk,
                     "migration written back once", f"{on_disk.keys()}")
         return ok
+
+
+def test_plugin_flavors_from_source():
+    """Keys/values as read from each plugin's code (emitters.py docstring)."""
+    with Sandbox(flavor="obsidian, sticky-notes, colorful-stickynotes") as box:
+        _export(box)
+        keys, _ = split_front_matter((box.output / "packing--33333333.md").read_text(encoding="utf-8"))
+        ok = check(keys.get("background_color") == "Green", "sticky-notes: background_color Green", f"{keys}")
+        ok &= check(keys.get("colorful-sticky-bg") == "mint", "colorful-stickynotes: green -> mint", f"{keys}")
+        ok &= check("sticky-green" in keys.get("cssclasses", ""), "obsidian cssclasses alongside", f"{keys}")
+        ok &= check(keys.get("color") == "green", "generic color (Floating Sticky Notes reads this)", f"{keys}")
+        gray, _ = split_front_matter((box.output / "note--66666666.md").read_text(encoding="utf-8"))
+        ok &= check(gray.get("background_color") == "Base" and gray.get("colorful-sticky-bg") == "gray",
+                    "gray maps to Base / gray per plugin vocabulary", f"{gray}")
+        return ok
+
+
+def test_subfolder_blank_writes_directly():
+    with Sandbox(subfolder="") as box:
+        _export(box)
+        return check(len(box.mirror_files()) == 7 and not (box.output / "Synced_from_Stickies").exists(),
+                     "subfolder '' writes straight into the folder", "")
 
 
 def test_custom_deleted_dir_and_collision():
@@ -426,6 +453,7 @@ if __name__ == "__main__":
              test_on_delete_mark_annotates_in_place, test_on_delete_delete_and_keep,
              test_code_block_note_front_matter_and_slug,
              test_two_outputs_with_different_settings, test_legacy_flat_config_migrates,
+             test_plugin_flavors_from_source, test_subfolder_blank_writes_directly,
              test_custom_deleted_dir_and_collision, test_exclusion_by_color_is_reactive,
              test_exclusion_by_title_regex_with_archive, test_attachments_follow_the_file,
              test_container_never_touched,

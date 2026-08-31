@@ -266,7 +266,8 @@ def test_hot_reload_output_dir_triggers_export():
             Config(config_file=box.config.config_file).set_target("default", "output_dir", str(other))
             ok = check(wait_for(engine.reload_config_if_changed, timeout=3),
                        "config change on disk detected", "")
-            ok &= check(wait_for(lambda: len(list(other.glob("*.md"))) == 7, timeout=8),
+            resolved = other / "Synced_from_Stickies"
+            ok &= check(wait_for(lambda: len(list(resolved.glob("*.md"))) == 7, timeout=8),
                         "new output folder populated by a full export", f"{list(other.glob('*'))}")
             return ok
         finally:
