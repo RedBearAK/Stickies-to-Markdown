@@ -244,11 +244,24 @@ class StickiesTUI:
     # --- settings ----------------------------------------------------------
 
     def settings(self):
+        try:
+            self._settings_loop()
+        except KeyboardInterrupt:
+            raise
+        except Exception as error:      # noqa: BLE001 - a screen must never blank silently
+            self.console.print(f"\n[red]Settings screen failed: {type(error).__name__}: {error}[/red]")
+            self.console.print(f"[dim]{self.config.config_file}[/dim]")
+            self.pause()
+
+    def _settings_loop(self):
         while True:
             self.refresh_state()
             self.console.clear()
             self.console.print("\n[bold]Settings[/bold]  [dim](saved on change)[/dim]\n")
             c = self.config
+            pandoc = pandoc_available(block=False)
+            pandoc_note = ("checking..." if pandoc is None
+                           else "available" if pandoc else "not installed")
             rows = [
                 ("1", "Mirror folder (output_dir)", c.output_dir() or "[red]not set[/red]"),
                 ("2", "Stickies folder (stickies_dir)", c.stickies_dir()),
@@ -259,8 +272,7 @@ class StickiesTUI:
                 ("7", "Excluded title pattern", c.get("exclude_title_regex") or "none"),
                 ("8", "When a note becomes excluded (on_exclude)", c.on_exclude()),
                 ("9", "Front-matter flavor", c.get("flavor")),
-                ("10", "Converter", f"{c.get('converter')}  [dim](pandoc "
-                                    f"{'available' if pandoc_available() else 'not installed'})[/dim]"),
+                ("10", "Converter", f"{c.get('converter')}  [dim](pandoc {pandoc_note})[/dim]"),
                 ("11", "Read-only mirror files", "yes" if c.get("read_only_output") else "no"),
                 ("12", "Include attachments", "yes" if c.get("include_attachments") else "no"),
                 ("13", "Dry run", "[cyan]ON[/cyan]" if c.get("dry_run") else "off"),

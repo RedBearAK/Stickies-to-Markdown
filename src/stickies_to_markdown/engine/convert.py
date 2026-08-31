@@ -242,13 +242,39 @@ def _fuse_surrogates(match):
     return match.group(0)
 
 
-def pandoc_available():
-    if pypandoc is None:
-        return False
-    try:
-        return bool(pypandoc.get_pandoc_path())
-    except Exception:       # noqa: BLE001 - missing binary raises OSError
-        return False
+_pandoc_state = {"known": False, "available": False, "probing": False}
+_pandoc_lock = __import__("threading").Lock()
+
+
+def _probe_pandoc():
+    available = False
+    if pypandoc is not None:
+        try:
+            # Runs `pandoc --version` against every candidate path; the first
+            # launch of a fresh binary can take seconds on macOS.
+            available = bool(pypandoc.get_pandoc_path())
+        except Exception:       # noqa: BLE001 - missing binary raises OSError
+            available = False
+    with _pandoc_lock:
+        _pandoc_state.update(known=True, available=available, probing=False)
+
+
+def pandoc_available(block=True):
+    """
+    Whether the pandoc tier can run. The probe is done once and cached.
+    With block=False the answer may be None ("still checking") so a UI can
+    render immediately; a background probe is kicked off in that case.
+    """
+    with _pandoc_lock:
+        if _pandoc_state["known"]:
+            return _pandoc_state["available"]
+        if not block:
+            if not _pandoc_state["probing"]:
+                _pandoc_state["probing"] = True
+                __import__("threading").Thread(target=_probe_pandoc, daemon=True).start()
+            return None
+    _probe_pandoc()
+    return _pandoc_state["available"]
 
 
 def _convert_pandoc(rtfd_path):
