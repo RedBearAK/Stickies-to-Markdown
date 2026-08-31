@@ -84,47 +84,62 @@ def wait_until_stable(rtfd_path, settle_seconds=1.0,
 
 
 class NoteProcessor:
+    """
+    Converts a note ONCE and exports it to every configured output. Each
+    output has its own Writer (index, policies, exclusions).
+    """
 
     def __init__(self, config, events, counters=None, logger=None):
         self.config = config
         self.events = events
         self.counters = counters or Counters()
         self.logger = logger or get_logger()
-        self.writer = Writer(config, events, self.logger)
+        self.writers = [Writer(config, target, events, self.logger)
+                        for target in config.targets() if target.output_dir()]
+        if not self.writers:
+            raise ValueError("no output configured (add one: stickies2md > Settings)")
         self.notes_known = 0
 
-    def is_excluded(self, note, markdown=None):
+    @property
+    def writer(self):
+        """The first writer - convenience for single-output callers/tests."""
+        return self.writers[0]
+
+    @staticmethod
+    def is_excluded(note, target, markdown=None, logger=None):
         """
-        Reactive exclusion: by colour (checked before conversion) or by a
-        regex on the first line (needs the converted text). Returns the
-        matching reason or "".
+        Reactive exclusion for one output: by colour (known before
+        conversion) or by a regex on the first line (needs the text).
+        Returns the reason or "".
         """
-        colors = [str(c).lower() for c in (self.config.get("exclude_colors") or [])]
+        colors = [str(c).lower() for c in (target.get("exclude_colors") or [])]
         if note.color in colors:
             return f"colour {note.color}"
-        pattern = self.config.get("exclude_title_regex") or ""
+        pattern = target.get("exclude_title_regex") or ""
         if pattern and markdown is not None:
-            first = first_content_line(markdown)
             try:
-                if re.search(pattern, first):
+                if re.search(pattern, first_content_line(markdown)):
                     return f"title matches {pattern!r}"
             except re.error as error:
-                self.logger.error(f"exclude_title_regex invalid: {error}")
+                (logger or get_logger()).error(f"exclude_title_regex invalid: {error}")
         return ""
 
     def process_note(self, note, settle=False):
         """
-        Convert one note and bring its mirror file up to date. Returns the
-        Event kind, or "excluded" (the caller then applies on_exclude to
-        any mirror file the note left behind).
+        Convert one note and bring its mirror file up to date in every
+        output. Returns a dict writer-name -> Event kind ("converted",
+        "unchanged", "excluded", "error"); see summarize_kinds().
         """
-        if self.is_excluded(note):
-            return "excluded"
+        wanted = [w for w in self.writers
+                  if not self.is_excluded(note, w.target, logger=self.logger)]
+        results = {w.name: "excluded" for w in self.writers if w not in wanted}
+        if not wanted:
+            return results
         if settle and not wait_until_stable(
                 note.rtfd_path, float(self.config.get("settle_seconds", 1.0))):
             self.events.put(Event("error", note.rtfd_path, "never settled"))
             self.counters.bump("errors")
-            return "error"
+            return {**results, **{w.name: "error" for w in wanted}}
         try:
             markdown, attachments, body_format = convert(
                 note.rtfd_path, self.config.get("converter", "auto"), self.logger,
@@ -134,15 +149,27 @@ class NoteProcessor:
             self.logger.error(str(error))
             self.events.put(Event("error", note.rtfd_path, str(error)))
             self.counters.bump("errors")
-            return "error"
-        if self.is_excluded(note, markdown):
-            return "excluded"
-        kind = self.writer.export_note(note, markdown, attachments, body_format)
-        if kind in ("converted", "unchanged"):
-            self.counters.bump(kind)
-        else:
-            self.counters.bump("errors")
-        return kind
+            return {**results, **{w.name: "error" for w in wanted}}
+        for writer in wanted:
+            if self.is_excluded(note, writer.target, markdown, self.logger):
+                results[writer.name] = "excluded"
+                continue
+            kind = writer.export_note(note, markdown, attachments, body_format)
+            results[writer.name] = kind
+            self.counters.bump(kind if kind in ("converted", "unchanged") else "errors")
+        return results
+
+    @staticmethod
+    def summarize_kinds(results):
+        """Collapse per-output kinds to one: error > converted > unchanged > excluded."""
+        kinds = set(results.values())
+        for kind in ("error", "converted", "unchanged", "excluded"):
+            if kind in kinds:
+                return kind
+        return "unchanged"
+
+    def excluded_writers(self, results):
+        return [w for w in self.writers if results.get(w.name) == "excluded"]
 
     def export_all(self):
         """
@@ -159,17 +186,20 @@ class NoteProcessor:
 
         notes = stickies.enumerate_notes(stickies_dir, self.logger)
         self.notes_known = len(notes)
-        self.writer.refresh_index()
-        self.logger.info(f"Export start: {len(notes)} notes in {stickies_dir}")
-        excluded = set()
+        for writer in self.writers:
+            writer.refresh_index()
+        self.logger.info(f"Export start: {len(notes)} notes in {stickies_dir} "
+                         f"-> {len(self.writers)} output(s)")
+        excluded = {w.name: set() for w in self.writers}
         for note in sorted(notes.values(), key=lambda n: n.uuid):
-            if self.process_note(note) == "excluded":
-                excluded.add(note.uuid)
-        live = set(notes.keys()) - excluded
-        removed = self.writer.handle_deletions(live, excluded)
-        self.counters.bump("deleted", len(removed) - len(
-            [n for n in removed if n in self.writer.last_excluded]))
-        self.counters.bump("excluded", len(self.writer.last_excluded))
+            for name, kind in self.process_note(note).items():
+                if kind == "excluded":
+                    excluded[name].add(note.uuid)
+        for writer in self.writers:
+            live = set(notes.keys()) - excluded[writer.name]
+            removed = writer.handle_deletions(live, excluded[writer.name])
+            self.counters.bump("deleted", len(removed) - len(writer.last_excluded))
+            self.counters.bump("excluded", len(writer.last_excluded))
         self.events.put(Event("scanned", stickies_dir,
                               f"{len(notes)} notes; {self.counters.as_dict()}"))
         self.logger.info(f"Export complete: {self.counters.as_dict()}")

@@ -10,7 +10,9 @@ Flag-driven front end (Phase 1). Printing happens HERE, never in the engine.
     stickies2md --follow-log          live log (handles rotation)
     stickies2md --config PATH         alternate config file
     stickies2md --output-dir PATH     override for this run (not saved)
-    stickies2md --set KEY=VALUE       change a setting persistently
+    stickies2md --set KEY=VALUE       change a global setting
+    stickies2md --set NAME.KEY=VALUE  change a setting of output NAME
+    stickies2md --add-output NAME=PATH / --remove-output NAME
 """
 
 import os
@@ -22,7 +24,7 @@ import argparse
 from stickies_to_markdown._version import __version__
 from stickies_to_markdown.engine.config import (
     Config, ConfigError, FILENAME_STYLES, ON_DELETE_CHOICES,
-    CONVERTER_CHOICES, FLAVOR_CHOICES,
+    CONVERTER_CHOICES, FLAVOR_CHOICES, TARGET_DEFAULTS,
 )
 from stickies_to_markdown.engine.logsetup import setup_logging
 from stickies_to_markdown.engine.processor import NoteProcessor
@@ -52,8 +54,11 @@ def build_parser():
                         help="follow the log file (Ctrl-C to stop)")
     action.add_argument("--show-config", action="store_true",
                         help="print the effective configuration")
-    action.add_argument("--set", metavar="KEY=VALUE", action="append",
-                        default=[], help="persistently change a setting")
+    action.add_argument("--set", metavar="[NAME.]KEY=VALUE", action="append",
+                        default=[], help="change a global setting, or KEY of output NAME")
+    action.add_argument("--add-output", metavar="NAME=PATH", action="append", default=[],
+                        help="add a mirror folder named NAME")
+    action.add_argument("--remove-output", metavar="NAME", action="append", default=[])
     inst = parser.add_argument_group("install / maintain")
     inst.add_argument("--install-command", action="store_true",
                       help="write the `stickies2md` launcher stub (records this interpreter)")
@@ -67,7 +72,8 @@ def build_parser():
     over.add_argument("--dry-run", "-d", action="store_true",
                       help="log and report, write nothing")
     over.add_argument("--stickies-dir", metavar="PATH")
-    over.add_argument("--output-dir", metavar="PATH")
+    over.add_argument("--output-dir", metavar="PATH",
+                      help="write to this ONE folder instead of the configured outputs")
     over.add_argument("--converter", choices=CONVERTER_CHOICES)
     over.add_argument("--flavor", choices=FLAVOR_CHOICES)
     over.add_argument("--filename-style", choices=FILENAME_STYLES)
@@ -95,6 +101,8 @@ def run_cli(argv):
     if args.uninstall_app:
         from stickies_to_markdown.frontends.bundle import uninstall_app
         return 0 if uninstall_app(app_dir=args.app_dir) else 1
+    if args.add_output or args.remove_output:
+        return _edit_outputs(config, args.add_output, args.remove_output)
     if args.set:
         return _apply_sets(config, args.set)
     if args.show_config:
@@ -116,29 +124,36 @@ def run_cli(argv):
 
 # --- actions ---------------------------------------------------------------
 
-def _overrides(args):
-    overrides = {}
-    for key, value in (("dry_run", args.dry_run or None),
-                       ("stickies_dir", args.stickies_dir),
-                       ("output_dir", args.output_dir),
-                       ("converter", args.converter),
-                       ("flavor", args.flavor),
-                       ("filename_style", args.filename_style),
-                       ("on_delete", args.on_delete)):
-        if value:
-            overrides[key] = value
-    return overrides
+def _run_config(config, args):
+    """Apply per-run overrides: globals via detached(); --output-dir makes a
+    single detached output; other per-output flags apply to every output."""
+    globals_ = {k: v for k, v in (("dry_run", args.dry_run or None),
+                                  ("stickies_dir", args.stickies_dir),
+                                  ("converter", args.converter)) if v}
+    per_target = {k: v for k, v in (("flavor", args.flavor),
+                                    ("filename_style", args.filename_style),
+                                    ("on_delete", args.on_delete)) if v}
+    if args.output_dir:
+        run_config = config.single_target(args.output_dir, **per_target)
+        run_config.config.update(globals_)
+        return run_config
+    if not globals_ and not per_target:
+        return config
+    outputs = [dict(block, **per_target) for block in (config.get("outputs") or [])]
+    return config.detached(outputs=outputs, **globals_)
+
+
+def _no_outputs_hint():
+    print("No mirror folder configured. Add one with:\n"
+          "    stickies2md --add-output vault=~/path/to/Synced_from_Stickies\n"
+          "or in the menu (stickies2md > Settings), or for this run only:\n"
+          "    stickies2md --once --output-dir PATH", file=sys.stderr)
 
 
 def _run_once(config, args):
-    overrides = _overrides(args)
-    run_config = config.detached(**overrides) if overrides else config
-
-    if not run_config.output_dir():
-        print("No output folder configured. Set one with:\n"
-              "    stickies2md --set output_dir=~/path/to/Synced_from_Stickies\n"
-              "or for this run only:  stickies2md --once --output-dir PATH",
-              file=sys.stderr)
+    run_config = _run_config(config, args)
+    if not run_config.has_outputs():
+        _no_outputs_hint()
         return 2
 
     setup_logging(run_config)
@@ -154,7 +169,8 @@ def _run_once(config, args):
     print(f"Export{mode}: {counters.converted} converted, "
           f"{counters.unchanged} unchanged, {counters.deleted} deleted, "
           f"{counters.errors} errors")
-    print(f"Output: {run_config.output_dir()}")
+    for target in run_config.targets():
+        print(f"Output ({target.name}): {target.output_dir()}")
     return 1 if counters.errors else 0
 
 
@@ -162,10 +178,9 @@ def _start(config, args):
     from stickies_to_markdown.frontends.render import event_markup, status_summary
     from rich.console import Console
     console = Console()
-    overrides = _overrides(args)
-    run_config = config.detached(**overrides) if overrides else config
-    if not run_config.output_dir():
-        print("No output folder configured (see --set output_dir=...).", file=sys.stderr)
+    run_config = _run_config(config, args)
+    if not run_config.has_outputs():
+        _no_outputs_hint()
         return 2
 
     engine = Engine(run_config)
@@ -176,7 +191,8 @@ def _start(config, args):
         return 1
     status = engine.status()
     console.print(f"[green]Watching:[/green] {run_config.stickies_dir()}")
-    console.print(f"[green]Mirror:[/green]   {run_config.output_dir()}")
+    for target in run_config.targets():
+        console.print(f"[green]Mirror ({target.name}):[/green] {target.output_dir()}")
     if not status.healthy:
         console.print(f"[red]Problem: {status.last_error}[/red]")
     console.print("[dim]Settings edited in the menu apply live. Ctrl-C to stop.[/dim]\n")
@@ -216,18 +232,68 @@ def _start(config, args):
 
 
 def _apply_sets(config, assignments):
+    global_keys = [k for k in config.default_config if k != "outputs"]
+    target_keys = [k for k in TARGET_DEFAULTS if k != "name"]
     for assignment in assignments:
         key, sep, raw = assignment.partition("=")
         if not sep:
-            print(f"--set needs KEY=VALUE, got: {assignment}", file=sys.stderr)
+            print(f"--set needs [NAME.]KEY=VALUE, got: {assignment}", file=sys.stderr)
             return 2
         key = key.strip()
-        if key not in config.default_config:
-            print(f"Unknown setting: {key}\nKnown: "
-                  f"{', '.join(sorted(config.default_config))}", file=sys.stderr)
+        raw = raw.strip()
+        name, dot, subkey = key.partition(".")
+        if dot:                                  # NAME.KEY -> one output block
+            if subkey not in target_keys:
+                print(f"Unknown output setting: {subkey}\nKnown: {', '.join(target_keys)}",
+                      file=sys.stderr)
+                return 2
+            if config.target(name) is None:
+                print(f"No output named {name!r}. Existing: "
+                      f"{', '.join(t.name for t in config.targets()) or 'none'}\n"
+                      f"Add one with --add-output {name}=PATH", file=sys.stderr)
+                return 2
+            config.set_target(name, subkey, _coerce(raw, TARGET_DEFAULTS[subkey]))
+            print(f"{name}.{subkey} = {config.target(name).get(subkey)!r}")
+        elif key in target_keys:                 # bare per-output key: first output (legacy)
+            if not config.targets():
+                if key == "output_dir":
+                    config.add_target("default", raw)
+                    print(f"default.output_dir = {raw!r}")
+                    continue
+                _no_outputs_hint()
+                return 2
+            first = config.targets()[0].name
+            config.set_target(first, key, _coerce(raw, TARGET_DEFAULTS[key]))
+            print(f"{first}.{key} = {config.target(first).get(key)!r}")
+        elif key in global_keys:
+            config.set(key, _coerce(raw, config.default_config[key]))
+            print(f"{key} = {config.get(key)!r}")
+        else:
+            print(f"Unknown setting: {key}\nGlobal: {', '.join(sorted(global_keys))}\n"
+                  f"Per output (NAME.KEY): {', '.join(target_keys)}", file=sys.stderr)
             return 2
-        config.set(key, _coerce(raw.strip(), config.default_config[key]))
-        print(f"{key} = {config.get(key)!r}")
+    return 0
+
+
+def _edit_outputs(config, additions, removals):
+    for spec in additions:
+        name, sep, path = spec.partition("=")
+        if not sep or not name.strip() or not path.strip():
+            print(f"--add-output needs NAME=PATH, got: {spec}", file=sys.stderr)
+            return 2
+        try:
+            config.add_target(name.strip(), path.strip())
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        print(f"Added output {name.strip()!r}: {path.strip()}")
+    for name in removals:
+        try:
+            config.remove_target(name)
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        print(f"Removed output {name!r} (its mirror folder is left untouched)")
     return 0
 
 

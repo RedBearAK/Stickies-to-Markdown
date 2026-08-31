@@ -152,21 +152,26 @@ def _strip_volatile(text):
 
 
 class Writer:
+    """One writer per output block. `target` carries every per-folder
+    setting (an OutputTarget); `config` supplies the globals (dry run)."""
 
-    def __init__(self, config, events, logger=None):
+    def __init__(self, config, target, events, logger=None):
         self.config = config
+        self.target = target
         self.events = events
         self.logger = logger or get_logger()
-        if not config.output_dir():
-            raise ValueError("output_dir is not configured")
+        if not target.output_dir():
+            raise ValueError(f"output '{target.name}' has no output_dir")
         self._mirror_index = None       # uuid -> filename, lazy
         self.last_excluded = []
 
-    # Read live so a hot-reloaded config (dry run toggled, folder changed)
-    # applies to the next note without rebuilding the writer.
+    @property
+    def name(self):
+        return self.target.name
+
     @property
     def output_dir(self):
-        return self.config.output_dir()
+        return self.target.output_dir()
 
     @property
     def dry_run(self):
@@ -174,7 +179,7 @@ class Writer:
 
     @property
     def read_only(self):
-        return bool(self.config.get("read_only_output", True))
+        return bool(self.target.get("read_only_output", True))
 
     def refresh_index(self):
         """Forget the cached uuid->filename map (another process may have
@@ -191,7 +196,7 @@ class Writer:
         self._body_format = body_format
         os.makedirs(self.output_dir, exist_ok=True)
         markdown = self._resolve_attachment_links(note, markdown, attachments)
-        target_name = filename_for(note, markdown, self.config.get("filename_style"))
+        target_name = filename_for(note, markdown, self.target.get("filename_style"))
         target_path = os.path.join(self.output_dir, target_name)
 
         previous_name = self._index().get(note.uuid)
@@ -217,7 +222,7 @@ class Writer:
             self.logger.info(f"{'DRY RUN: would write' if self.dry_run else 'Wrote'}"
                              f" {target_name}")
 
-        if self.config.get("include_attachments", True):
+        if self.target.get("include_attachments", True):
             self._copy_attachments(note, attachments)
 
         detail = "dry run" if self.dry_run else note.color
@@ -237,7 +242,7 @@ class Writer:
             if uuid in live_uuids:
                 continue
             excluded = uuid in excluded_uuids
-            policy = self.config.on_exclude() if excluded else self.config.on_delete()
+            policy = self.target.on_exclude() if excluded else self.target.on_delete()
             self._dispose(name, uuid, policy,
                           reason="excluded" if excluded else "note deleted")
             del self._index()[uuid]
@@ -253,7 +258,7 @@ class Writer:
 
     def _render(self, note, markdown, existing_text):
         keys = {}
-        if self.config.get("front_matter", True):
+        if self.target.get("front_matter", True):
             rtf_stat = self._stat(note.rtf_path)
             # created: sticky once recorded. TXT.rtf is replaced on every
             # save (new birth time), so the package DIRECTORY's birth time
@@ -275,7 +280,7 @@ class Writer:
                 "content-hash": body_hash(markdown),
                 "synced-at": self._iso(time.time()),
             }
-            keys.update(flavor_keys(self.config.get("flavor", "generic"), note))
+            keys.update(flavor_keys(self.target.get("flavor", "generic"), note))
             return render_front_matter(keys) + "\n" + markdown
         return markdown
 
@@ -339,7 +344,7 @@ class Writer:
         # "mark" and "archive" both annotate first.
         self._annotate_deleted(path)
         if policy == "archive":
-            deleted_dir = self.config.deleted_dir()
+            deleted_dir = self.target.deleted_dir()
             os.makedirs(deleted_dir, exist_ok=True)
             target = os.path.join(deleted_dir, name)
             if os.path.exists(target):       # earlier archive of the same name
@@ -374,7 +379,7 @@ class Writer:
         if any(line.startswith(DELETED_KEY + ":") for line in lines):
             return False
         lines.append(f"{DELETED_KEY}: {self._iso(time.time())}")
-        for key, value in deleted_keys(self.config.get("flavor", "generic")).items():
+        for key, value in deleted_keys(self.target.get("flavor", "generic")).items():
             lines = _merge_key(lines, key, value)
         self._write_atomic(path, "---\n" + "\n".join(lines) + text[end:])
         return True
@@ -412,7 +417,7 @@ class Writer:
 
         markdown = _ATTACH_MARK.sub(replace, markdown)
         extras = [a for a in attachments if a not in mentioned]
-        if extras and self.config.get("include_attachments", True):
+        if extras and self.target.get("include_attachments", True):
             links = "\n".join(f"![{name}]({base}/{name})" for name in extras)
             markdown = markdown.rstrip("\n") + "\n\n" + links + "\n"
         return markdown

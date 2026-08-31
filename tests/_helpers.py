@@ -27,6 +27,7 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from stickies_to_markdown.engine import Config      # noqa: E402
+from stickies_to_markdown.engine.config import TARGET_DEFAULTS   # noqa: E402
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -55,13 +56,25 @@ class Sandbox:
 
         self.config = Config(
             config_file=str(self.config_dir / "stickies_to_markdown.json"))
+        # Per-output keys (on_delete, flavor, exclude_colors, ...) go into
+        # the single "default" output block; everything else is global.
+        block = {"name": "default", "output_dir": str(self.output)}
         settings = {
             "stickies_dir": str(self.container),
-            "output_dir": str(self.output),
             "log_file": str(self.config_dir / "stickies_to_markdown.log"),
         }
-        settings.update(config_overrides)
+        for key, value in config_overrides.items():
+            (block if key in TARGET_DEFAULTS else settings)[key] = value
+        settings["outputs"] = [block]
         self.config.update(settings)
+
+    @property
+    def target(self):
+        """The single output block of this sandbox, freshly read."""
+        return self.config.targets()[0]
+
+    def set_target(self, key, value):
+        self.config.set_target("default", key, value)
 
     # --- content helpers ---------------------------------------------------
 

@@ -8,7 +8,21 @@ Mechanics carried over from Duplicate-File-Preventer unchanged:
 - set() is silent. Telling the user "saved" is a front-end decision.
 - changed_on_disk()/reload() support hot reload from a running engine.
 
-Keys are this tool's (handoff §5.5).
+Shape (JSON):
+
+    {
+      "stickies_dir": ..., "converter": ..., ...      global keys
+      "outputs": [                                    one block per mirror folder
+        {"name": "vault", "output_dir": "~/Obsidian/Vault/Synced_from_Stickies",
+         "flavor": "obsidian", "on_delete": "archive", ...},
+        {"name": "plain", "output_dir": "~/Dropbox/Notes", "flavor": "generic"}
+      ]
+    }
+
+Global keys govern reading, converting, watching and logging. Every
+per-folder decision (flavor, naming, deletion policy, exclusions,
+attachments) lives in its output block. A pre-multi-output file with
+output_dir at the top level is migrated into a single "default" block.
 """
 
 import os
@@ -21,8 +35,7 @@ import tempfile
 CONFIG_FILENAME = "stickies_to_markdown.json"
 LOG_FILENAME = "stickies_to_markdown.log"
 
-# Post-Catalina per-note storage (handoff §4). Verify on the target Mac
-# (first-session checklist step 1) before relying on it.
+# Post-Catalina per-note storage (verified, dev_notes/MAC_FINDINGS.md).
 DEFAULT_STICKIES_DIR = (
     "~/Library/Containers/com.apple.Stickies/Data/Library/Stickies")
 
@@ -37,6 +50,27 @@ ON_DELETE_CHOICES = ("archive", "mark", "delete", "keep")
 ON_DELETE_ALIASES = {"tombstone": "archive"}
 CONVERTER_CHOICES = ("auto", "textutil", "pandoc", "text")
 FLAVOR_CHOICES = ("generic", "obsidian")
+
+# One block per mirror folder. Every key is optional in the file; missing
+# ones take these defaults. `name` is the handle used by --set NAME.KEY and
+# the menu; `output_dir` is the only one that must be set.
+TARGET_DEFAULTS = {
+    "name": "",
+    "output_dir": "",
+    "flavor": "generic",                    # or "obsidian"
+    "filename_style": "slug-uuid",          # or "uuid"
+    "on_delete": "archive",                 # mark | delete | keep
+    "deleted_dir": "_deleted",              # relative to output_dir, or absolute
+    "on_exclude": "delete",                 # archive | mark | delete | keep
+    "exclude_colors": [],                   # e.g. ["gray"]
+    "exclude_title_regex": "",              # e.g. "^\\s*#private\\b"
+    "read_only_output": True,               # chmod 444 mirror files
+    "include_attachments": True,
+    "front_matter": True,
+}
+
+# Keys that used to live at the top level of a single-output config.
+_LEGACY_TARGET_KEYS = [k for k in TARGET_DEFAULTS if k != "name"]
 
 
 class ConfigError(Exception):
@@ -53,6 +87,41 @@ def default_config_dir():
         return os.path.expanduser('~/Library/Application Support/StickiesToMarkdown')
     xdg_config = os.environ.get('XDG_CONFIG_HOME', os.path.expanduser('~/.config'))
     return os.path.join(xdg_config, 'stickies-to-markdown')
+
+
+class OutputTarget:
+    """A read-only view of one output block with the resolved accessors the
+    writer needs. Edits go through Config.set_target()."""
+
+    def __init__(self, data):
+        self.data = dict(TARGET_DEFAULTS)
+        self.data.update(data or {})
+
+    def get(self, key, default=None):
+        return self.data.get(key, default)
+
+    @property
+    def name(self):
+        return self.data.get("name") or "default"
+
+    def output_dir(self):
+        value = self.data.get("output_dir") or ""
+        return os.path.expanduser(value) if value else ""
+
+    def on_delete(self):
+        value = str(self.data.get("on_delete") or "archive")
+        return ON_DELETE_ALIASES.get(value, value)
+
+    def on_exclude(self):
+        value = str(self.data.get("on_exclude") or "delete")
+        return ON_DELETE_ALIASES.get(value, value)
+
+    def deleted_dir(self):
+        value = os.path.expanduser(str(self.data.get("deleted_dir") or "_deleted"))
+        return value if os.path.isabs(value) else os.path.join(self.output_dir(), value)
+
+    def __repr__(self):
+        return f"OutputTarget({self.name!r}, {self.output_dir()!r})"
 
 
 class Config:
@@ -76,36 +145,25 @@ class Config:
         self.autosave = autosave
 
         self.default_config = {
+            # --- global: reading Stickies, converting, watching, logging ---
             "stickies_dir": DEFAULT_STICKIES_DIR,   # auto-detected default
-            "output_dir": "",                       # must be set before export
-            "filename_style": "slug-uuid",          # or "uuid"
-            "on_delete": "archive",                 # mark | delete | keep
-            "deleted_dir": "_deleted",              # relative to output_dir, or absolute
-            # Exclusion is REACTIVE: a note that matches is treated as if
-            # deleted, per on_exclude. Colour is the attribute to use - it
-            # can be set on an empty note before any content autosaves.
-            "exclude_colors": [],                   # e.g. ["gray"]
-            "exclude_title_regex": "",              # e.g. "^\\s*#private\\b"
-            "on_exclude": "delete",                 # archive | mark | delete | keep
+            "converter": "auto",                    # textutil|pandoc|text
             "debounce_seconds": 3.0,                # per-note quiet time; Stickies
                                                     # autosaves 8+ s apart (verified)
             "settle_seconds": 1.0,                  # package stops changing; the
                                                     # mid-save gap seen was 0.5 s
-            "include_attachments": True,
-            "front_matter": True,
-            "flavor": "generic",                    # or "obsidian"
-            "read_only_output": True,               # chmod 444 mirror files
             # A note needing this many escapes AND this density (per 100
             # non-space chars) is emitted verbatim in a fenced code block
             # instead of escaped. 0 in either disables.
             "code_block_min_escapes": 6,
             "code_block_density": 4.0,
-            "converter": "auto",                    # textutil|pandoc|text
             "log_file": os.path.join(self.config_dir, LOG_FILENAME),
             "log_level": "INFO",
             "log_max_size": 10,                     # MB
             "log_backup_count": 5,
             "dry_run": False,
+            # --- outputs: one block per mirror folder (TARGET_DEFAULTS) ---
+            "outputs": [],
         }
 
         self._disk_signature = None
@@ -114,7 +172,6 @@ class Config:
     # --- load / save -------------------------------------------------------
 
     def _signature(self):
-        """(mtime_ns, size) of the file on disk, or None when absent."""
         try:
             stat_info = os.stat(self.config_file)
         except OSError:
@@ -122,7 +179,7 @@ class Config:
         return (stat_info.st_mtime_ns, stat_info.st_size)
 
     def load_config(self):
-        """Read the file, merging in defaults for any missing keys."""
+        """Read the file, merging in defaults; migrate a legacy flat file."""
         if not os.path.exists(self.config_file):
             self._disk_signature = None
             return copy.deepcopy(self.default_config)
@@ -136,12 +193,29 @@ class Config:
         if not isinstance(loaded, dict):
             raise ConfigError(f"{self.config_file}: top level is not an object")
 
+        migrated = self._migrate_legacy(loaded)
         for key, value in self.default_config.items():
             if key not in loaded:
                 loaded[key] = copy.deepcopy(value)
+        if not isinstance(loaded.get("outputs"), list):
+            loaded["outputs"] = []
 
         self._disk_signature = self._signature()
+        if migrated and self.autosave:
+            self.config = loaded
+            self.save_config()
         return loaded
+
+    @staticmethod
+    def _migrate_legacy(loaded):
+        """output_dir (and friends) at the top level -> one "default" block."""
+        legacy = {k: loaded.pop(k) for k in _LEGACY_TARGET_KEYS if k in loaded}
+        if not legacy:
+            return False
+        if legacy.get("output_dir") and not loaded.get("outputs"):
+            legacy["name"] = "default"
+            loaded["outputs"] = [legacy]
+        return True
 
     def save_config(self):
         """Atomic write: temp file in the same directory, then os.replace()."""
@@ -162,7 +236,7 @@ class Config:
             raise
         self._disk_signature = self._signature()
 
-    # --- access ------------------------------------------------------------
+    # --- global access -----------------------------------------------------
 
     def get(self, key, default=None):
         return self.config.get(key, default)
@@ -173,52 +247,100 @@ class Config:
             self.save_config()
 
     def update(self, values):
-        """Set several keys with a single save."""
         self.config.update(values)
         if self.autosave:
             self.save_config()
 
-    # --- resolved paths ----------------------------------------------------
-
     def stickies_dir(self):
         return os.path.expanduser(self.get("stickies_dir") or DEFAULT_STICKIES_DIR)
 
-    def output_dir(self):
-        value = self.get("output_dir") or ""
-        return os.path.expanduser(value) if value else ""
+    # --- outputs -----------------------------------------------------------
 
-    def on_delete(self):
-        value = str(self.get("on_delete") or "archive")
-        return ON_DELETE_ALIASES.get(value, value)
+    def targets(self):
+        """Every configured output block, as OutputTarget objects."""
+        return [OutputTarget(block) for block in self.get("outputs") or []
+                if isinstance(block, dict)]
 
-    def on_exclude(self):
-        value = str(self.get("on_exclude") or "delete")
-        return ON_DELETE_ALIASES.get(value, value)
+    def target(self, name):
+        for target in self.targets():
+            if target.name == name:
+                return target
+        return None
 
-    def deleted_dir(self):
-        value = os.path.expanduser(str(self.get("deleted_dir") or "_deleted"))
-        return value if os.path.isabs(value) else os.path.join(self.output_dir(), value)
+    def output_dirs(self):
+        return [t.output_dir() for t in self.targets() if t.output_dir()]
+
+    def has_outputs(self):
+        return bool(self.output_dirs())
+
+    def add_target(self, name, output_dir, **keys):
+        if not name or "." in name:
+            raise ValueError("output name must be non-empty and contain no '.'")
+        if self.target(name) is not None:
+            raise ValueError(f"an output named {name!r} already exists")
+        block = {"name": name, "output_dir": output_dir}
+        for key, value in keys.items():
+            if key not in TARGET_DEFAULTS:
+                raise ValueError(f"unknown output setting: {key}")
+            block[key] = value
+        outputs = list(self.get("outputs") or [])
+        outputs.append(block)
+        self.set("outputs", outputs)
+        return OutputTarget(block)
+
+    def remove_target(self, name):
+        outputs = [b for b in (self.get("outputs") or [])
+                   if (b.get("name") or "default") != name]
+        if len(outputs) == len(self.get("outputs") or []):
+            raise ValueError(f"no output named {name!r}")
+        self.set("outputs", outputs)
+
+    def set_target(self, name, key, value):
+        if key not in TARGET_DEFAULTS or key == "name":
+            raise ValueError(f"unknown output setting: {key}")
+        outputs = copy.deepcopy(self.get("outputs") or [])
+        for block in outputs:
+            if (block.get("name") or "default") == name:
+                block[key] = value
+                self.set("outputs", outputs)
+                return
+        raise ValueError(f"no output named {name!r}")
+
+    def rename_target(self, name, new_name):
+        if not new_name or "." in new_name:
+            raise ValueError("output name must be non-empty and contain no '.'")
+        if self.target(new_name) is not None:
+            raise ValueError(f"an output named {new_name!r} already exists")
+        outputs = copy.deepcopy(self.get("outputs") or [])
+        for block in outputs:
+            if (block.get("name") or "default") == name:
+                block["name"] = new_name
+                self.set("outputs", outputs)
+                return
+        raise ValueError(f"no output named {name!r}")
+
+    def single_target(self, output_dir, **keys):
+        """A detached config with exactly one output (per-run overrides),
+        inheriting the first configured block's settings when there is one."""
+        block = dict(TARGET_DEFAULTS)
+        if self.targets():
+            block.update(self.targets()[0].data)
+        block.update({"name": "override", "output_dir": output_dir})
+        block.update(keys)
+        return self.detached(outputs=[block])
 
     # --- hot reload --------------------------------------------------------
 
     def changed_on_disk(self):
-        """True when another writer has touched the file since we last read it."""
         return self._signature() != self._disk_signature
 
     def reload(self):
-        """
-        Re-read the file. On failure the in-memory config is left alone and
-        ConfigError propagates; the caller decides how loudly to complain.
-        """
         self.config = self.load_config()
 
     # --- detached copies ---------------------------------------------------
 
     def detached(self, **overrides):
-        """
-        A copy that never saves. Used for one-off exports with different
-        settings than the user's persistent ones.
-        """
+        """A copy that never saves; overrides may include a whole `outputs` list."""
         clone = copy.copy(self)
         clone.autosave = False
         clone.config = copy.deepcopy(self.config)

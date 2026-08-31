@@ -82,12 +82,12 @@ class StickiesApp(rumps.App):
     def toggle(self, _):
         if self.engine.status().monitoring:
             self.engine.stop()
-        elif not self.engine.config.output_dir():
+        elif not self.engine.config.has_outputs():
             bring_to_front()
             rumps.alert(title="No mirror folder yet",
-                        message=("Set the folder in the terminal:\n\n"
+                        message=("Add an output in the terminal:\n\n"
                                  "stickies2md\n"
-                                 "Settings > Mirror folder\n\n"
+                                 "Settings > Outputs > +\n\n"
                                  "Then Start here."))
         else:
             try:
@@ -128,7 +128,7 @@ class StickiesApp(rumps.App):
             self.status_item.title = (
                 f"Watching {st.notes_known} notes - {st.converted_session} converted"
                 + (" (dry run)" if st.dry_run else ""))
-        elif not self.engine.config.output_dir():
+        elif not self.engine.config.has_outputs():
             self.icon = ICON_STOPPED
             self.status_item.title = "No mirror folder - set it in the terminal"
         else:
@@ -149,7 +149,7 @@ def run_menubar(config=None):
     signal.signal(signal.SIGTERM, on_signal)
 
     try:
-        if engine.config.output_dir():
+        if engine.config.has_outputs():
             try:
                 engine.start()
             except EngineError:

@@ -102,7 +102,8 @@ def test_deleted_note_archives_with_annotation():
         ok &= check(len(box.mirror_files()) == 6, "mirror root has 6 files",
                     f"{[f.name for f in box.mirror_files()]}")
         # "tombstone" still accepted as an alias
-        ok &= check(box.config.detached(on_delete="tombstone").on_delete() == "archive",
+        from stickies_to_markdown.engine.config import OutputTarget
+        ok &= check(OutputTarget({"on_delete": "tombstone"}).on_delete() == "archive",
                     "'tombstone' aliases to 'archive'", "alias broken")
         return ok
 
@@ -155,7 +156,7 @@ def test_exclusion_by_color_is_reactive():
         _export(box)                       # gray note (66666666) mirrored
         ok = check(any(f.name.endswith("66666666.md") for f in box.mirror_files()),
                    "before exclusion the gray note is mirrored", "not mirrored")
-        box.config.set("exclude_colors", ["gray"])
+        box.set_target("exclude_colors", ["gray"])
         counters = _export(box)            # now it becomes excluded
         ok &= check(not any(f.name.endswith("66666666.md") for f in box.mirror_files())
                     and not (box.output / "_deleted").exists(),
@@ -177,9 +178,9 @@ def test_exclusion_by_title_regex_with_archive():
         names = [f.name for f in box.mirror_files()]
         ok = check(not any("33333333" in n for n in names) and counters.excluded == 0,
                    "title-excluded note never written (nothing to dispose)", f"{names}")
-        box.config.set("exclude_title_regex", "")
+        box.set_target("exclude_title_regex", "")
         _export(box)
-        box.config.set("exclude_title_regex", r"^Packing")
+        box.set_target("exclude_title_regex", r"^Packing")
         _export(box)
         archived = box.output / "_deleted" / "packing--33333333.md"
         ok &= check(archived.is_file(), "on_exclude=archive archives a newly excluded note",
@@ -226,6 +227,67 @@ def test_code_block_note_front_matter_and_slug():
         return ok
 
 
+def test_two_outputs_with_different_settings():
+    """One conversion, two mirrors: obsidian/uuid-named/gray-excluded/mark
+    vs generic/slug-named/archive. Each has its own index and policies."""
+    with Sandbox(flavor="obsidian", filename_style="uuid",
+                 exclude_colors=["gray"], on_delete="mark") as box:
+        plain = box.root / "plain"
+        box.config.add_target("plain", str(plain), flavor="generic", on_delete="archive")
+        counters = _export(box)
+        vault_files = sorted(f.name for f in box.mirror_files())
+        plain_files = sorted(f.name for f in plain.glob("*.md"))
+        ok = check(len(vault_files) == 6 and len(plain_files) == 7,
+                   "gray note excluded from one output only",
+                   f"vault={vault_files} plain={plain_files}")
+        ok &= check(all(len(n) == 11 for n in vault_files)
+                    and any(n.startswith("grocery-list--") for n in plain_files),
+                    "each output uses its own filename style", f"{vault_files[:2]} {plain_files[:2]}")
+        keys_v, _ = split_front_matter((box.output / "11111111.md").read_text(encoding="utf-8"))
+        keys_p, _ = split_front_matter((plain / "grocery-list--11111111.md").read_text(encoding="utf-8"))
+        ok &= check("cssclasses" in keys_v and "cssclasses" not in keys_p,
+                    "each output uses its own flavor", f"{keys_v.keys()} {keys_p.keys()}")
+        ok &= check(counters.converted == 13 and counters.excluded == 0,
+                    "counters count per output export", f"{counters.as_dict()}")
+        # delete a note: mark in one, archive in the other
+        _delete_project_note(box)
+        _export(box)
+        marked = box.output / "22222222.md"
+        archived = plain / "_deleted" / "project-ideas--22222222.md"
+        ok &= check(marked.is_file() and "deleted-from-stickies" in marked.read_text(encoding="utf-8")
+                    and archived.is_file(),
+                    "deletion policy applied per output (mark vs archive)",
+                    f"marked={marked.is_file()} archived={archived.is_file()}")
+        # idle re-run: both byte-identical
+        before = (box.tree_signature(box.output), box.tree_signature(plain))
+        _export(box)
+        ok &= check(before == (box.tree_signature(box.output), box.tree_signature(plain)),
+                    "idle re-run writes nothing to either output", "churn")
+        return ok
+
+
+def test_legacy_flat_config_migrates():
+    import json
+    with Sandbox() as box:
+        legacy = {"stickies_dir": str(box.container), "output_dir": str(box.output),
+                  "flavor": "obsidian", "on_delete": "mark", "converter": "text",
+                  "log_file": box.config.get("log_file")}
+        with open(box.config.config_file, "w") as handle:
+            json.dump(legacy, handle)
+        from stickies_to_markdown.engine import Config
+        cfg = Config(config_file=box.config.config_file)
+        ok = check([t.name for t in cfg.targets()] == ["default"]
+                   and cfg.target("default").get("flavor") == "obsidian"
+                   and cfg.target("default").on_delete() == "mark"
+                   and cfg.get("converter") == "text" and "output_dir" not in cfg.config,
+                   "flat single-output config migrated into outputs[default]", f"{cfg.config}")
+        with open(box.config.config_file) as handle:
+            on_disk = json.load(handle)
+        ok &= check("outputs" in on_disk and "output_dir" not in on_disk,
+                    "migration written back once", f"{on_disk.keys()}")
+        return ok
+
+
 def test_custom_deleted_dir_and_collision():
     with Sandbox(deleted_dir="Deleted_Stickies") as box:
         _export(box)
@@ -244,7 +306,7 @@ def test_custom_deleted_dir_and_collision():
             "22222222-BBBB-4BBB-8BBB-222222222222\ncontent-hash: x\n---\n\nnew\n",
             encoding="utf-8")
         from stickies_to_markdown.engine.writer import Writer
-        Writer(box.config, EventQueue()).handle_deletions(set(), set())
+        Writer(box.config, box.target, EventQueue()).handle_deletions(set(), set())
         copies = sorted((box.output / "Deleted_Stickies").glob("project-ideas--22222222*.md"))
         ok &= check(len(copies) == 2 and "EDITED" in archived.read_text(encoding="utf-8"),
                     "archive collision gets a timestamp suffix; first copy intact",
@@ -363,6 +425,7 @@ if __name__ == "__main__":
              test_deleted_note_archives_with_annotation,
              test_on_delete_mark_annotates_in_place, test_on_delete_delete_and_keep,
              test_code_block_note_front_matter_and_slug,
+             test_two_outputs_with_different_settings, test_legacy_flat_config_migrates,
              test_custom_deleted_dir_and_collision, test_exclusion_by_color_is_reactive,
              test_exclusion_by_title_regex_with_archive, test_attachments_follow_the_file,
              test_container_never_touched,

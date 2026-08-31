@@ -31,10 +31,10 @@ def test_once_exports_and_reports():
 
 def test_missing_output_dir_exits_2_with_hint():
     with Sandbox() as box:
-        box.config.set("output_dir", "")
+        box.config.set("outputs", [])
         code, _out, err = _run(box, "--once")
-        return check(code == 2 and "--set output_dir=" in err,
-                     "missing output_dir: exit 2 and a setup hint",
+        return check(code == 2 and "--add-output" in err,
+                     "no outputs: exit 2 and a setup hint",
                      f"rc={code} err={err!r}")
 
 
@@ -45,26 +45,40 @@ def test_per_run_override_not_saved():
                                 "--filename-style", "uuid")
         ok = check(code == 0 and len(list(other.glob("*.md"))) == 7,
                    "--output-dir override honoured", f"rc={code}")
-        ok &= check(box.config.get("output_dir") == str(box.output),
+        box.config.reload()
+        ok &= check(box.config.output_dirs() == [str(box.output)],
                     "override did not touch the saved config",
-                    f"saved: {box.config.get('output_dir')!r}")
+                    f"saved: {box.config.output_dirs()!r}")
         return ok
 
 
 def test_set_roundtrip_and_validation():
     with Sandbox() as box:
-        code, out, _ = _run(box, "--set", "on_delete=delete",
+        code, out, _ = _run(box, "--set", "default.on_delete=delete",
                             "--set", "debounce_seconds=5.5")
-        ok = check(code == 0 and "on_delete = 'delete'" in out,
-                   "--set persists and echoes", f"rc={code} out={out!r}")
+        ok = check(code == 0 and "default.on_delete = 'delete'" in out,
+                   "--set persists and echoes (NAME.KEY for an output)", f"rc={code} out={out!r}")
         box.config.reload()
-        ok &= check(box.config.get("debounce_seconds") == 5.5,
-                    "float value coerced", f"{box.config.get('debounce_seconds')!r}")
-        _run(box, "--set", "exclude_colors=gray, pink")
+        ok &= check(box.config.get("debounce_seconds") == 5.5 and box.target.on_delete() == "delete",
+                    "float value coerced; output key landed in its block",
+                    f"{box.config.get('debounce_seconds')!r} {box.target.on_delete()}")
+        _run(box, "--set", "default.exclude_colors=gray, pink")
         box.config.reload()
-        ok &= check(box.config.get("exclude_colors") == ["gray", "pink"],
+        ok &= check(box.target.get("exclude_colors") == ["gray", "pink"],
                     "list value coerced from comma-separated",
-                    f"{box.config.get('exclude_colors')!r}")
+                    f"{box.target.get('exclude_colors')!r}")
+        code3, out3, _ = _run(box, "--set", "output_dir=/tmp/legacy")
+        box.config.reload()
+        ok &= check(code3 == 0 and box.target.output_dir() == "/tmp/legacy",
+                    "legacy --set output_dir= targets the first output", f"{out3!r}")
+        code4, out4, _ = _run(box, "--add-output", "plain=/tmp/plain")
+        box.config.reload()
+        ok &= check(code4 == 0 and [t.name for t in box.config.targets()] == ["default", "plain"],
+                    "--add-output NAME=PATH appends a block", f"{out4!r}")
+        code5, _o, _e = _run(box, "--remove-output", "plain")
+        box.config.reload()
+        ok &= check(code5 == 0 and [t.name for t in box.config.targets()] == ["default"],
+                    "--remove-output NAME removes it", "")
         code2, _out2, err2 = _run(box, "--set", "no_such_key=1")
         ok &= check(code2 == 2 and "Unknown setting" in err2,
                     "unknown key rejected with exit 2", f"rc={code2}")

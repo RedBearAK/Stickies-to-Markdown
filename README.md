@@ -41,7 +41,8 @@ stickies2md                         # menu > Settings > Mirror folder, then Star
 or without the menu:
 
 ```
-stickies2md --set output_dir=~/Obsidian/Vault/Synced_from_Stickies
+stickies2md --add-output vault=~/Obsidian/Vault/Synced_from_Stickies
+stickies2md --set vault.flavor=obsidian
 stickies2md --install-command       # puts `stickies2md` on PATH, recording this venv
 stickies2md --start
 ```
@@ -122,24 +123,65 @@ linked from the body.
 
 ## Configuration
 
-`stickies2md --show-config` prints everything;
-`stickies2md --set KEY=VALUE` persists a change. Highlights:
+The config is JSON at `~/Library/Application Support/StickiesToMarkdown/`
+(macOS) or `~/.config/stickies-to-markdown/` (Linux), edited by the menu,
+by `--set`, or by hand; a running watcher picks up changes live. It has
+two levels:
 
-| key | default | meaning |
+```json
+{
+  "stickies_dir": "~/Library/Containers/com.apple.Stickies/Data/Library/Stickies",
+  "converter": "auto",
+  "debounce_seconds": 3.0,
+  "outputs": [
+    {"name": "vault", "output_dir": "~/Obsidian/Vault/Synced_from_Stickies",
+     "flavor": "obsidian", "on_delete": "archive", "exclude_colors": ["gray"]},
+    {"name": "plain", "output_dir": "~/Dropbox/Notes/Stickies",
+     "flavor": "generic", "filename_style": "uuid", "on_delete": "delete"}
+  ]
+}
+```
+
+**Global** keys govern reading, converting and watching; **each output
+block** is one mirror folder with its own flavor, naming, deletion policy
+and exclusions. A note is converted once and written to every output. The
+menu's Settings screen shows the globals with the outputs listed beneath
+(`A`, `B`, … to edit one, `+` to add, `-` to remove); from the command line:
+
+```
+stickies2md --show-config
+stickies2md --set converter=pandoc                 # global
+stickies2md --set vault.on_delete=mark             # NAME.KEY for an output
+stickies2md --add-output plain=~/Dropbox/Notes     # then --set plain.flavor=...
+stickies2md --remove-output plain                  # the folder is left alone
+stickies2md --once --output-dir /tmp/check         # one folder, this run only
+```
+
+A config from before multiple outputs (top-level `output_dir`) is migrated
+into a single block named `default` the first time it is read.
+
+| global key | default | meaning |
 | --- | --- | --- |
-| `output_dir` | *(unset)* | the mirror folder; must be set once |
 | `stickies_dir` | the Stickies container | override for testing |
-| `converter` | `auto` | `foundation` → `textutil` → `text` fallback chain |
+| `converter` | `auto` | `textutil` → `pandoc` → `text` fallback chain |
+| `debounce_seconds` / `settle_seconds` | `3.0` / `1.0` | watcher timing, calibrated to Stickies' autosave |
+| `code_block_min_escapes` / `code_block_density` | `6` / `4.0` | when a note becomes a fenced code block (see below) |
+| `dry_run` | `false` | log and report, write nothing |
+
+| output key | default | meaning |
+| --- | --- | --- |
+| `name` | — | handle for `--set NAME.KEY` and the menu |
+| `output_dir` | — | the mirror folder |
 | `flavor` | `generic` | `obsidian` adds `cssclasses` |
 | `filename_style` | `slug-uuid` | or `uuid` |
 | `on_delete` | `archive` | `mark` / `delete` / `keep` — see below |
-| `deleted_dir` | `_deleted` | archive folder; relative to `output_dir` or absolute |
-| `exclude_colors` | `[]` | colours to keep out of the mirror |
+| `deleted_dir` | `_deleted` | archive folder; relative to the output or absolute |
+| `exclude_colors` | `[]` | colours to keep out of this output |
 | `exclude_title_regex` | *(none)* | first-line pattern to keep out |
 | `on_exclude` | `delete` | policy for a note that becomes excluded |
-| `code_block_min_escapes` / `code_block_density` | `6` / `4.0` | when a note becomes a fenced code block (see below) |
 | `read_only_output` | `true` | chmod 444 mirror files |
 | `include_attachments` | `true` | copy package attachments |
+| `front_matter` | `true` | write the YAML block |
 
 ### When a note is deleted in Stickies
 
@@ -157,9 +199,9 @@ Attachments follow the file: archived alongside it, or removed with it.
 ### Keeping some notes out of the mirror
 
 ```
-stickies2md --set exclude_colors=gray          # "gray means private"
-stickies2md --set exclude_title_regex='^#private\b'
-stickies2md --set on_exclude=delete            # archive | mark | delete | keep
+stickies2md --set vault.exclude_colors=gray          # "gray means private", this output only
+stickies2md --set vault.exclude_title_regex='^#private\b'
+stickies2md --set vault.on_exclude=delete            # archive | mark | delete | keep
 ```
 
 Exclusion is **reactive**: a note that matches is treated as if it had
@@ -189,9 +231,6 @@ Such a note is emitted verbatim inside a fenced code block instead
 trigger is `code_block_min_escapes` (default 6) *and*
 `code_block_density` (default 4 per 100 non-space characters); set either
 to `0` to always escape instead.
-
-Config lives at `~/Library/Application Support/StickiesToMarkdown/` (macOS)
-or `~/.config/stickies-to-markdown/` (Linux), JSON, hot-reload-friendly.
 
 ## Converter tiers
 

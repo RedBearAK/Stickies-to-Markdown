@@ -48,14 +48,21 @@ def test_menu_renders_and_quits_cleanly():
 
 def test_settings_change_persists():
     with Sandbox() as box:
-        # 1 settings -> 4 on_delete -> "mark" -> 13 dry run -> yes -> 0 back -> Q
-        tui, _ = _tui(box, ["1", "4", "mark", "13", "y", "0", "Q"])
+        # 1 settings -> A (output "default") -> 4 on_delete -> mark -> 0 back
+        #   -> 5 dry run -> yes -> + add output "plain" -> folder -> generic -> 0 -> Q
+        other = str(box.root / "plain")
+        tui, _ = _tui(box, ["1", "A", "4", "mark", "0", "5", "y", "+", "plain", other,
+                            "generic", "0", "Q"])
         tui.show_menu()
         from stickies_to_markdown.engine import Config
         fresh = Config(config_file=box.config.config_file)
-        return check(fresh.on_delete() == "mark" and fresh.get("dry_run") is True,
-                     "settings edited in the menu are saved to disk",
-                     f"{fresh.get('on_delete')} {fresh.get('dry_run')}")
+        ok = check(fresh.target("default").on_delete() == "mark" and fresh.get("dry_run") is True,
+                   "per-output and global settings edited in the menu are saved",
+                   f"{fresh.target('default').on_delete()} {fresh.get('dry_run')}")
+        ok &= check([t.name for t in fresh.targets()] == ["default", "plain"]
+                    and fresh.target("plain").output_dir() == other,
+                    "a second output added from the menu", f"{fresh.targets()}")
+        return ok
 
 
 def test_export_now_and_views():

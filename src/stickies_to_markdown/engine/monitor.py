@@ -124,7 +124,11 @@ class Engine:
             self.logger.info(f"Dry run: {'ON' if self.config.get('dry_run') else 'off'}")
 
             self._last_error = None
-            self._processor = NoteProcessor(self.config, self.events, self.counters, self.logger)
+            try:
+                self._processor = NoteProcessor(self.config, self.events, self.counters, self.logger)
+            except ValueError as error:
+                self.lock.release()
+                raise EngineError(str(error)) from None
             self._probe_container()
             self._start_observer()
             self._running = True
@@ -266,16 +270,17 @@ class Engine:
                     self.logger.warning(f"{uuid[:8]}: never became a package; giving up")
                 return
             self._retries.pop(uuid, None)
-            removed = processor.writer.handle_deletions(set(notes), ())
-            if removed:
-                self.counters.bump("deleted", len(removed))
+            for writer in processor.writers:
+                removed = writer.handle_deletions(set(notes), ())
+                if removed:
+                    self.counters.bump("deleted", len(removed))
             self._last_export_ts = time.time()
             return
 
         self._retries.pop(uuid, None)
-        kind = processor.process_note(note, settle=True)
-        if kind == "excluded":
-            removed = processor.writer.handle_deletions(set(notes) - {uuid}, {uuid})
+        results = processor.process_note(note, settle=True)
+        for writer in processor.excluded_writers(results):
+            removed = writer.handle_deletions(set(notes) - {uuid}, {uuid})
             self.counters.bump("excluded", len(removed))
         self._last_export_ts = time.time()
 
@@ -357,7 +362,7 @@ class Engine:
             return False
         with self._state_lock:
             old_dir = self.config.stickies_dir()
-            old_out = self.config.output_dir()
+            old_out = self.config.get("outputs")
             try:
                 self.config.reload()
             except ConfigError as error:
@@ -374,14 +379,18 @@ class Engine:
                     self._probe_container()
                     self._start_observer()
                     detail = f"watching {self.config.stickies_dir()}"
-                if self.config.output_dir() != old_out:
-                    self._processor = NoteProcessor(self.config, self.events,
-                                                    self.counters, self.logger)
-                    self._full_export_requested = True
-                    detail = f"output -> {self.config.output_dir()}"
+                if self.config.get("outputs") != old_out:
+                    try:
+                        self._processor = NoteProcessor(self.config, self.events,
+                                                        self.counters, self.logger)
+                        self._full_export_requested = True
+                        detail = f"outputs -> {', '.join(self.config.output_dirs())}"
+                    except ValueError as error:
+                        self._set_error(str(error))
                 elif self._processor is not None:
                     self._processor.config = self.config
-                    self._processor.writer.config = self.config
+                    for writer in self._processor.writers:
+                        writer.config = self.config
             self.logger.info(f"Config reloaded ({detail})")
             self.events.put(Event("config_reloaded", self.config.config_file, detail))
             return True

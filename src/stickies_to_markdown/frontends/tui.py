@@ -83,8 +83,13 @@ class StickiesTUI:
             self.console.print(f"Status: {dot} {first}")
             if second:
                 self.console.print(f"        [dim]{second}[/dim]")
-            out = self.config.output_dir() or "[red]not set[/red]"
-            self.console.print(f"Mirror: {out}")
+            targets = self.config.targets()
+            if not targets:
+                self.console.print("Outputs: [red]none configured - Settings > Outputs[/red]")
+            else:
+                for t in targets:
+                    self.console.print(f"Output [bold]{t.name}[/bold]: {t.output_dir() or '[red]no folder[/red]'}"
+                                       f"  [dim]{t.get('flavor')}, on delete {t.on_delete()}[/dim]")
             self.console.print("[dim]Settings save on change and apply live to a running watcher[/dim]\n")
 
             locked_elsewhere = status.lock_holder_pid is not None and not status.monitoring
@@ -139,8 +144,8 @@ class StickiesTUI:
             self.console.print("[green]Watcher stopped.[/green]")
             self.pause()
             return
-        if not self.config.output_dir():
-            self.console.print("[red]No mirror folder set. Settings > Mirror folder first.[/red]")
+        if not self.config.has_outputs():
+            self.console.print("[red]No output configured. Settings > Outputs > add one first.[/red]")
             self.pause()
             return
         try:
@@ -160,8 +165,8 @@ class StickiesTUI:
         self.pause()
 
     def export_now(self):
-        if not self.config.output_dir():
-            self.console.print("[red]No mirror folder set.[/red]")
+        if not self.config.has_outputs():
+            self.console.print("[red]No output configured.[/red]")
             self.pause()
             return
         status = self.engine.status()
@@ -257,28 +262,158 @@ class StickiesTUI:
         while True:
             self.refresh_state()
             self.console.clear()
-            self.console.print("\n[bold]Settings[/bold]  [dim](saved on change)[/dim]\n")
+            self.console.print("\n[bold]Settings[/bold]  [dim](saved on change; a running watcher picks them up)[/dim]\n")
             c = self.config
             pandoc = pandoc_available(block=False)
             pandoc_note = ("checking..." if pandoc is None
                            else "available" if pandoc else "not installed")
             rows = [
-                ("1", "Mirror folder (output_dir)", c.output_dir() or "[red]not set[/red]"),
-                ("2", "Stickies folder (stickies_dir)", c.stickies_dir()),
-                ("3", "Filename style", c.get("filename_style")),
-                ("4", "When a note is deleted (on_delete)", c.on_delete()),
-                ("5", "Archive folder (deleted_dir)", c.get("deleted_dir")),
-                ("6", "Excluded colours", ", ".join(c.get("exclude_colors") or []) or "none"),
-                ("7", "Excluded title pattern", c.get("exclude_title_regex") or "none"),
-                ("8", "When a note becomes excluded (on_exclude)", c.on_exclude()),
-                ("9", "Front-matter flavor", c.get("flavor")),
-                ("10", "Converter", f"{c.get('converter')}  [dim](pandoc {pandoc_note})[/dim]"),
-                ("11", "Read-only mirror files", "yes" if c.get("read_only_output") else "no"),
-                ("12", "Include attachments", "yes" if c.get("include_attachments") else "no"),
-                ("13", "Dry run", "[cyan]ON[/cyan]" if c.get("dry_run") else "off"),
-                ("14", "Debounce / settle seconds",
+                ("1", "Stickies folder", c.stickies_dir()),
+                ("2", "Converter", f"{c.get('converter')}  [dim](pandoc {pandoc_note})[/dim]"),
+                ("3", "Debounce / settle seconds",
                  f"{c.get('debounce_seconds')} / {c.get('settle_seconds')}"),
-                ("15", "Log level", c.get("log_level")),
+                ("4", "Code block: min escapes / density",
+                 f"{c.get('code_block_min_escapes')} / {c.get('code_block_density')}"),
+                ("5", "Dry run", "[cyan]ON[/cyan]" if c.get("dry_run") else "off"),
+                ("6", "Log level", c.get("log_level")),
+            ]
+            self.console.print("[bold cyan]Global[/bold cyan]")
+            table = Table(show_header=False, box=None, padding=(0, 2))
+            for number, label, value in rows:
+                table.add_row(f"[bold]{number}[/bold]", label, str(value))
+            self.console.print(table)
+
+            self.console.print("\n[bold cyan]Outputs[/bold cyan]  [dim](one block per mirror folder)[/dim]")
+            targets = c.targets()
+            letters = [chr(ord("A") + i) for i in range(len(targets))]
+            table = Table(show_header=False, box=None, padding=(0, 2))
+            for letter, t in zip(letters, targets):
+                table.add_row(f"[bold]{letter}[/bold]", t.name,
+                              t.output_dir() or "[red]no folder[/red]",
+                              f"[dim]{t.get('flavor')}, {t.get('filename_style')}, "
+                              f"on delete {t.on_delete()}[/dim]")
+            if not targets:
+                table.add_row("", "[red]none - add one below[/red]", "", "")
+            table.add_row("[bold]+[/bold]", "Add an output", "", "")
+            if targets:
+                table.add_row("[bold]-[/bold]", "Remove an output", "", "")
+            self.console.print(table)
+            self.console.print("\n0. Back\n")
+
+            choices = [r[0] for r in rows] + letters + ["+", "0"] + (["-"] if targets else [])
+            choice = self.ask("Change which", choices=choices, default="0").upper()
+            if choice == "0":
+                return
+            if choice in letters:
+                self.output_settings(targets[letters.index(choice)].name)
+            elif choice == "+":
+                self.add_output()
+            elif choice == "-":
+                self.remove_output()
+            else:
+                getattr(self, f"_set_g{choice}")()
+
+    # --- global settings ---------------------------------------------------
+
+    def _set_g1(self):
+        current = self.config.get("stickies_dir") or ""
+        value = self._ask_folder("Stickies folder", current)
+        if value is None:
+            return
+        expanded = os.path.expanduser(value)
+        if not os.path.isdir(expanded):
+            self.console.print("[red]Not a folder.[/red]")
+            self.pause()
+            return
+        self.config.set("stickies_dir", value)
+        readable, reason = container_readable(expanded)
+        self.console.print("[green]Saved; readable.[/green]" if readable else f"[red]Saved, but: {reason}[/red]")
+        self.pause()
+
+    def _set_g2(self):
+        self._set_choice("converter", CONVERTER_CHOICES, "Converter")
+
+    def _set_g3(self):
+        for key in ("debounce_seconds", "settle_seconds"):
+            raw = self.ask(key, default=str(self.config.get(key)))
+            try:
+                self.config.set(key, float(raw))
+            except ValueError:
+                self.console.print("[red]Not a number, unchanged.[/red]")
+
+    def _set_g4(self):
+        self.console.print("[dim]A note needing at least MIN escapes and DENSITY per 100 chars "
+                           "is emitted as a fenced code block. 0 disables.[/dim]")
+        for key, cast in (("code_block_min_escapes", int), ("code_block_density", float)):
+            raw = self.ask(key, default=str(self.config.get(key)))
+            try:
+                self.config.set(key, cast(raw))
+            except ValueError:
+                self.console.print("[red]Not a number, unchanged.[/red]")
+
+    def _set_g5(self):
+        self._set_bool("dry_run", "Dry run (log and report, write nothing)?")
+
+    def _set_g6(self):
+        self._set_choice("log_level", ("DEBUG", "INFO", "WARNING", "ERROR"), "Log level")
+
+    # --- outputs -----------------------------------------------------------
+
+    def _ask_folder(self, prompt, current):
+        self.console.print(f"[dim]Current: {current or 'not set'}  (drag a folder here, or paste; "
+                           f"empty keeps it)[/dim]")
+        value = self.ask(prompt, default=current).strip().strip("'\"").replace("\\ ", " ")
+        return value or None
+
+    def add_output(self):
+        self.console.print("\n[bold]Add an output[/bold]")
+        name = self.ask("Short name (e.g. vault, plain)", default="").strip()
+        if not name:
+            return
+        if "." in name or self.config.target(name) is not None:
+            self.console.print("[red]Names must be unique and contain no '.'[/red]")
+            self.pause()
+            return
+        folder = self._ask_folder("Mirror folder", "")
+        if not folder:
+            return
+        flavor = self.ask("Front-matter flavor", choices=list(FLAVOR_CHOICES), default="generic")
+        self.config.add_target(name, folder, flavor=flavor)
+        self.console.print(f"[green]Added output '{name}'.[/green] It will be created on first export.")
+        self.pause()
+
+    def remove_output(self):
+        names = [t.name for t in self.config.targets()]
+        name = self.ask("Remove which output", choices=names + ["cancel"], default="cancel")
+        if name == "cancel":
+            return
+        if Confirm.ask(f"Remove '{name}' from the config? (its folder is left untouched)",
+                       default=False, console=self.console):
+            self.config.remove_target(name)
+            self.console.print(f"[green]Removed '{name}'.[/green]")
+        self.pause()
+
+    def output_settings(self, name):
+        while True:
+            self.refresh_state()
+            t = self.config.target(name)
+            if t is None:
+                return
+            self.console.clear()
+            self.console.print(f"\n[bold]Output '{name}'[/bold]  [dim](saved on change)[/dim]\n")
+            rows = [
+                ("1", "Mirror folder", t.output_dir() or "[red]not set[/red]"),
+                ("2", "Front-matter flavor", t.get("flavor")),
+                ("3", "Filename style", t.get("filename_style")),
+                ("4", "When a note is deleted (on_delete)", t.on_delete()),
+                ("5", "Archive folder (deleted_dir)", t.get("deleted_dir")),
+                ("6", "Excluded colours", ", ".join(t.get("exclude_colors") or []) or "none"),
+                ("7", "Excluded title pattern", t.get("exclude_title_regex") or "none"),
+                ("8", "When a note becomes excluded (on_exclude)", t.on_exclude()),
+                ("9", "Read-only mirror files", "yes" if t.get("read_only_output") else "no"),
+                ("10", "Include attachments", "yes" if t.get("include_attachments") else "no"),
+                ("11", "Front matter", "yes" if t.get("front_matter") else "no"),
+                ("12", "Rename this output", name),
             ]
             table = Table(show_header=False, box=None, padding=(0, 2))
             for number, label, value in rows:
@@ -288,27 +423,82 @@ class StickiesTUI:
             choice = self.ask("Change which", choices=[r[0] for r in rows] + ["0"], default="0")
             if choice == "0":
                 return
-            getattr(self, f"_set_{choice}")()
+            if choice == "12":
+                new_name = self.ask("New name", default=name).strip()
+                if new_name and new_name != name:
+                    try:
+                        self.config.rename_target(name, new_name)
+                        name = new_name
+                    except ValueError as error:
+                        self.console.print(f"[red]{error}[/red]")
+                        self.pause()
+                continue
+            getattr(self, f"_set_o{choice}")(name)
 
-    def _set_path(self, key, prompt, must_exist):
-        current = self.config.get(key) or ""
-        self.console.print(f"[dim]Current: {current or 'not set'}  (drag a folder here, or paste)[/dim]")
-        value = self.ask(prompt, default=current).strip().strip("'\"").replace("\\ ", " ")
-        if not value:
-            return
-        expanded = os.path.expanduser(value)
-        if must_exist and not os.path.isdir(expanded):
-            self.console.print("[red]Not a folder.[/red]")
+    def _set_target_choice(self, name, key, choices, prompt):
+        value = self.ask(prompt, choices=list(choices), default=str(self.config.target(name).get(key)))
+        self.config.set_target(name, key, value)
+
+    def _set_target_bool(self, name, key, prompt):
+        current = bool(self.config.target(name).get(key))
+        self.config.set_target(name, key, Confirm.ask(prompt, default=current, console=self.console))
+
+    def _set_o1(self, name):
+        value = self._ask_folder("Mirror folder", self.config.target(name).get("output_dir") or "")
+        if value:
+            self.config.set_target(name, "output_dir", value)
+            if not os.path.isdir(os.path.expanduser(value)):
+                self.console.print("[dim]It will be created on first export.[/dim]")
+                self.pause()
+
+    def _set_o2(self, name):
+        self._set_target_choice(name, "flavor", FLAVOR_CHOICES, "Front-matter flavor")
+
+    def _set_o3(self, name):
+        self._set_target_choice(name, "filename_style", FILENAME_STYLES, "Filename style")
+
+    def _set_o4(self, name):
+        self._set_target_choice(name, "on_delete", ON_DELETE_CHOICES, "When a note is deleted")
+
+    def _set_o5(self, name):
+        value = self.ask("Archive folder (relative to mirror, or absolute)",
+                         default=str(self.config.target(name).get("deleted_dir")))
+        if value.strip():
+            self.config.set_target(name, "deleted_dir", value.strip())
+
+    def _set_o6(self, name):
+        self.console.print(f"[dim]Colours: {', '.join(COLOR_NAMES)}. Empty clears.[/dim]")
+        value = self.ask("Excluded colours (comma-separated)",
+                         default=", ".join(self.config.target(name).get("exclude_colors") or []))
+        colors = [c.strip().lower() for c in value.split(",") if c.strip()]
+        bad = [c for c in colors if c not in COLOR_NAMES]
+        if bad:
+            self.console.print(f"[red]Unknown colour(s): {', '.join(bad)}[/red]")
             self.pause()
             return
-        self.config.set(key, value)
-        self.console.print(f"[green]Saved.[/green]")
-        if key == "output_dir" and not os.path.isdir(expanded):
-            self.console.print("[dim]It will be created on first export.[/dim]")
-        if key == "stickies_dir":
-            readable, reason = container_readable(expanded)
-            self.console.print("[green]Readable.[/green]" if readable else f"[red]{reason}[/red]")
-        self.pause()
+        self.config.set_target(name, "exclude_colors", colors)
+
+    def _set_o7(self, name):
+        self.console.print("[dim]A regular expression tested against the first line. Empty "
+                           "clears. Tip: exclude by colour instead - it can be chosen before "
+                           "the note autosaves.[/dim]")
+        value = self.ask("Excluded title pattern",
+                         default=self.config.target(name).get("exclude_title_regex") or "")
+        self.config.set_target(name, "exclude_title_regex", value.strip())
+
+    def _set_o8(self, name):
+        self._set_target_choice(name, "on_exclude", ON_DELETE_CHOICES, "When a note becomes excluded")
+
+    def _set_o9(self, name):
+        self._set_target_bool(name, "read_only_output", "Make mirror files read-only (chmod 444)?")
+
+    def _set_o10(self, name):
+        self._set_target_bool(name, "include_attachments", "Copy attachments?")
+
+    def _set_o11(self, name):
+        self._set_target_bool(name, "front_matter", "Write YAML front matter?")
+
+    # --- shared prompt helpers ---------------------------------------------
 
     def _set_choice(self, key, choices, prompt=None):
         value = self.ask(prompt or key, choices=list(choices), default=str(self.config.get(key)))
@@ -317,72 +507,6 @@ class StickiesTUI:
     def _set_bool(self, key, prompt):
         self.config.set(key, Confirm.ask(prompt, default=bool(self.config.get(key)),
                                          console=self.console))
-
-    def _set_1(self):
-        self._set_path("output_dir", "Mirror folder", must_exist=False)
-
-    def _set_2(self):
-        self._set_path("stickies_dir", "Stickies folder", must_exist=True)
-
-    def _set_3(self):
-        self._set_choice("filename_style", FILENAME_STYLES, "Filename style")
-
-    def _set_4(self):
-        self._set_choice("on_delete", ON_DELETE_CHOICES, "When a note is deleted")
-
-    def _set_5(self):
-        value = self.ask("Archive folder (relative to mirror, or absolute)",
-                         default=str(self.config.get("deleted_dir")))
-        if value.strip():
-            self.config.set("deleted_dir", value.strip())
-
-    def _set_6(self):
-        self.console.print(f"[dim]Colours: {', '.join(COLOR_NAMES)}. Empty clears.[/dim]")
-        value = self.ask("Excluded colours (comma-separated)",
-                         default=", ".join(self.config.get("exclude_colors") or []))
-        colors = [c.strip().lower() for c in value.split(",") if c.strip()]
-        bad = [c for c in colors if c not in COLOR_NAMES]
-        if bad:
-            self.console.print(f"[red]Unknown colour(s): {', '.join(bad)}[/red]")
-            self.pause()
-            return
-        self.config.set("exclude_colors", colors)
-
-    def _set_7(self):
-        self.console.print("[dim]A regular expression tested against the first line. "
-                           "Empty clears. Tip: set the colour instead - it can be chosen "
-                           "before the note autosaves.[/dim]")
-        value = self.ask("Excluded title pattern", default=self.config.get("exclude_title_regex") or "")
-        self.config.set("exclude_title_regex", value.strip())
-
-    def _set_8(self):
-        self._set_choice("on_exclude", ON_DELETE_CHOICES, "When a note becomes excluded")
-
-    def _set_9(self):
-        self._set_choice("flavor", FLAVOR_CHOICES, "Front-matter flavor")
-
-    def _set_10(self):
-        self._set_choice("converter", CONVERTER_CHOICES, "Converter")
-
-    def _set_11(self):
-        self._set_bool("read_only_output", "Make mirror files read-only (chmod 444)?")
-
-    def _set_12(self):
-        self._set_bool("include_attachments", "Copy attachments?")
-
-    def _set_13(self):
-        self._set_bool("dry_run", "Dry run (log and report, write nothing)?")
-
-    def _set_14(self):
-        for key in ("debounce_seconds", "settle_seconds"):
-            raw = self.ask(f"{key}", default=str(self.config.get(key)))
-            try:
-                self.config.set(key, float(raw))
-            except ValueError:
-                self.console.print("[red]Not a number, unchanged.[/red]")
-
-    def _set_15(self):
-        self._set_choice("log_level", ("DEBUG", "INFO", "WARNING", "ERROR"), "Log level")
 
     def view_configuration(self):
         self.console.clear()
@@ -411,7 +535,14 @@ class StickiesTUI:
         self.pause()
 
     def open_output_folder(self):
-        path = self.config.output_dir()
+        targets = [t for t in self.config.targets() if t.output_dir()]
+        if not targets:
+            path = ""
+        elif len(targets) == 1:
+            path = targets[0].output_dir()
+        else:
+            name = self.ask("Which output", choices=[t.name for t in targets], default=targets[0].name)
+            path = self.config.target(name).output_dir()
         if not path or not os.path.isdir(path):
             self.console.print("[red]Mirror folder not set or not created yet.[/red]")
         elif sys.platform == "darwin":
