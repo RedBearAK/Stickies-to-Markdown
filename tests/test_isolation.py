@@ -18,7 +18,7 @@ from _helpers import Sandbox, check, run_suite
 
 ENGINE = Path(__file__).resolve().parent.parent / "src" / "stickies_to_markdown" / "engine"
 
-FORBIDDEN_EVERYWHERE = ("AppKit", "rumps", "rich", "Cocoa", "objc")
+FORBIDDEN_EVERYWHERE = ("AppKit", "rumps", "rich", "Cocoa", "objc", "textual", "prompt_toolkit")
 FORBIDDEN_OUTSIDE_CONVERT = ("Foundation",)
 PRINTY = re.compile(r"^\s*print\(|sys\.stdout|sys\.stderr", re.MULTILINE)
 

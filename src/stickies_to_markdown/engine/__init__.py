@@ -8,7 +8,9 @@ guard; AppKit and rumps are forbidden everywhere in the engine.
 from stickies_to_markdown.engine.config import Config, ConfigError
 from stickies_to_markdown.engine.events import Event, Status, EventQueue
 from stickies_to_markdown.engine.lock import MonitorLock
+from stickies_to_markdown.engine.monitor import Engine, EngineError
 
-__all__ = ["Config", "ConfigError", "Event", "Status", "EventQueue", "MonitorLock"]
+__all__ = ["Config", "ConfigError", "Event", "Status", "EventQueue", "MonitorLock",
+           "Engine", "EngineError"]
 
 # End of file #

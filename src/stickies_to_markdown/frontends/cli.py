@@ -1,8 +1,11 @@
 """
 Flag-driven front end (Phase 1). Printing happens HERE, never in the engine.
 
+    stickies2md --start               watch in the foreground (Ctrl-C stops)
     stickies2md --once                 full export, then exit
     stickies2md --once --dry-run      show what would change, write nothing
+    stickies2md --install-command     put `stickies2md` on PATH (a stub recording this venv)
+    stickies2md --install-app         macOS .app bundle for the menu bar / Login Items
     stickies2md --show-log            print the log
     stickies2md --follow-log          live log (handles rotation)
     stickies2md --config PATH         alternate config file
@@ -13,6 +16,7 @@ Flag-driven front end (Phase 1). Printing happens HERE, never in the engine.
 import os
 import sys
 import time
+import signal
 import argparse
 
 from stickies_to_markdown._version import __version__
@@ -23,6 +27,10 @@ from stickies_to_markdown.engine.config import (
 from stickies_to_markdown.engine.logsetup import setup_logging
 from stickies_to_markdown.engine.processor import NoteProcessor
 from stickies_to_markdown.engine.events import EventQueue
+from stickies_to_markdown.engine.monitor import Engine, EngineError
+
+RELOAD_POLL_SECONDS = 1.0
+IDLE_SUMMARY_SECONDS = 300      # --start prints a heartbeat line when idle this long
 
 
 def build_parser():
@@ -34,6 +42,8 @@ def build_parser():
     parser.add_argument("--config", "-c", metavar="PATH",
                         help="alternate config file")
     action = parser.add_argument_group("actions")
+    action.add_argument("--start", "-s", action="store_true",
+                        help="watch Stickies in the foreground until Ctrl-C")
     action.add_argument("--once", "-o", action="store_true",
                         help="export every note once, then exit")
     action.add_argument("--show-log", "-l", action="store_true",
@@ -44,6 +54,15 @@ def build_parser():
                         help="print the effective configuration")
     action.add_argument("--set", metavar="KEY=VALUE", action="append",
                         default=[], help="persistently change a setting")
+    inst = parser.add_argument_group("install / maintain")
+    inst.add_argument("--install-command", action="store_true",
+                      help="write the `stickies2md` launcher stub (records this interpreter)")
+    inst.add_argument("--uninstall-command", action="store_true")
+    inst.add_argument("--dir", metavar="DIR", help="stub directory (default ~/.local/bin)")
+    inst.add_argument("--install-app", action="store_true",
+                      help="write the macOS .app bundle (default ~/Applications)")
+    inst.add_argument("--uninstall-app", action="store_true")
+    inst.add_argument("--app-dir", metavar="DIR", help="bundle directory")
     over = parser.add_argument_group("per-run overrides (not saved)")
     over.add_argument("--dry-run", "-d", action="store_true",
                       help="log and report, write nothing")
@@ -64,6 +83,18 @@ def run_cli(argv):
         print(f"Config error: {error}", file=sys.stderr)
         return 2
 
+    if args.install_command:
+        from stickies_to_markdown.frontends.installer import install_command
+        return 0 if install_command(bin_dir=args.dir) else 1
+    if args.uninstall_command:
+        from stickies_to_markdown.frontends.installer import uninstall_command
+        return 0 if uninstall_command(bin_dir=args.dir) else 1
+    if args.install_app:
+        from stickies_to_markdown.frontends.bundle import install_app
+        return 0 if install_app(app_dir=args.app_dir) else 1
+    if args.uninstall_app:
+        from stickies_to_markdown.frontends.bundle import uninstall_app
+        return 0 if uninstall_app(app_dir=args.app_dir) else 1
     if args.set:
         return _apply_sets(config, args.set)
     if args.show_config:
@@ -76,6 +107,8 @@ def run_cli(argv):
         return _follow_log(config)
     if args.once:
         return _run_once(config, args)
+    if args.start:
+        return _start(config, args)
 
     build_parser().print_help()
     return 0
@@ -83,7 +116,7 @@ def run_cli(argv):
 
 # --- actions ---------------------------------------------------------------
 
-def _run_once(config, args):
+def _overrides(args):
     overrides = {}
     for key, value in (("dry_run", args.dry_run or None),
                        ("stickies_dir", args.stickies_dir),
@@ -94,6 +127,11 @@ def _run_once(config, args):
                        ("on_delete", args.on_delete)):
         if value:
             overrides[key] = value
+    return overrides
+
+
+def _run_once(config, args):
+    overrides = _overrides(args)
     run_config = config.detached(**overrides) if overrides else config
 
     if not run_config.output_dir():
@@ -118,6 +156,63 @@ def _run_once(config, args):
           f"{counters.errors} errors")
     print(f"Output: {run_config.output_dir()}")
     return 1 if counters.errors else 0
+
+
+def _start(config, args):
+    from stickies_to_markdown.frontends.render import event_markup, status_summary
+    from rich.console import Console
+    console = Console()
+    overrides = _overrides(args)
+    run_config = config.detached(**overrides) if overrides else config
+    if not run_config.output_dir():
+        print("No output folder configured (see --set output_dir=...).", file=sys.stderr)
+        return 2
+
+    engine = Engine(run_config)
+    try:
+        engine.start()
+    except EngineError as error:
+        console.print(f"[red]{error}[/red]")
+        return 1
+    status = engine.status()
+    console.print(f"[green]Watching:[/green] {run_config.stickies_dir()}")
+    console.print(f"[green]Mirror:[/green]   {run_config.output_dir()}")
+    if not status.healthy:
+        console.print(f"[red]Problem: {status.last_error}[/red]")
+    console.print("[dim]Settings edited in the menu apply live. Ctrl-C to stop.[/dim]\n")
+
+    stopping = {"flag": False}
+
+    def handler(_signum, _frame):
+        stopping["flag"] = True
+
+    previous_int = signal.signal(signal.SIGINT, handler)
+    previous_term = signal.signal(signal.SIGTERM, handler)
+    last_output = time.time()
+    was_healthy = status.healthy
+    try:
+        while not stopping["flag"]:
+            time.sleep(RELOAD_POLL_SECONDS)
+            engine.reload_config_if_changed()
+            for event in engine.events.drain():
+                if event.kind != "unchanged":
+                    console.print(event_markup(event))
+                    last_output = time.time()
+            status = engine.status()
+            if was_healthy and not status.healthy:
+                console.print(f"[red]Problem: {status.last_error}[/red]")
+                last_output = time.time()
+            was_healthy = status.healthy
+            if time.time() - last_output >= IDLE_SUMMARY_SECONDS:
+                first, _second = status_summary(status)
+                console.print(f"[dim]{time.strftime('%H:%M:%S')}  {first}[/dim]")
+                last_output = time.time()
+    finally:
+        signal.signal(signal.SIGINT, previous_int)
+        signal.signal(signal.SIGTERM, previous_term)
+        engine.stop()
+    console.print("[dim]Stopped.[/dim]")
+    return 0
 
 
 def _apply_sets(config, assignments):

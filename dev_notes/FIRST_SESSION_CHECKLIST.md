@@ -1,5 +1,8 @@
 # First session on the Mac — verification checklist
 
+**Status: completed 2026-08-30; findings in `MAC_FINDINGS.md`.** Kept for
+re-verification after a macOS update.
+
 **Most of this is now automated:** run
 
     python3 dev_notes/mac_verify.py

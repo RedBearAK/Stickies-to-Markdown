@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Text Processing :: Markup :: Markdown",
     "Topic :: Utilities",
 ]
-# 3.9 floor to match Duplicate-File-Preventer; Phase 1 is stdlib-only.
+# 3.9 floor to match Duplicate-File-Preventer (watchdog 6 needs 3.9).
 requires-python = ">=3.9"
 dynamic = ["version", "dependencies"]
 
@@ -31,7 +31,13 @@ Homepage = "https://github.com/RedBearAK/stickies-to-markdown"
 stickies2md = "stickies_to_markdown.__main__:main"
 
 [project.optional-dependencies]
-# Phase 2: menubar = ["rumps>=0.4 ; sys_platform == 'darwin'"]
+# macOS menu bar front end. rumps pulls in PyObjC; the marker keeps it off
+# Linux/Windows entirely:  pip install '.[menubar]'
+menubar = ["rumps>=0.4 ; sys_platform == 'darwin'"]
+# Better conversion: markdownify for the HTML stage, pypandoc-binary for a
+# pandoc tier that works on any OS. Both are auto-detected; without them the
+# stdlib walker and text tiers are used.  pip install '.[convert]'
+convert = ["markdownify>=1.1.0", "pypandoc-binary>=1.13"]
 dev = ["pytest>=7.0.0"]
 
 [tool.setuptools]
@@ -40,6 +46,10 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["stickies_to_markdown*"]
+
+[tool.setuptools.package-data]
+stickies_to_markdown = ["frontends/icons/*.png", "frontends/icons/*.icns",
+                        "frontends/icons/*.svg", "frontends/launcher_template.c"]
 
 [tool.setuptools.dynamic]
 version = {attr = "stickies_to_markdown._version.__version__"}

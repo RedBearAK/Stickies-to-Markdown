@@ -13,26 +13,59 @@ mirror would be silently overwritten. One writer, one direction.
 Stickies (source of truth)  ──▶  Synced_from_Stickies/   (annotated .md)
 ```
 
-## Status: Phase 1 (one-shot export)
+## Status: Phase 2 — watcher, menu, menu bar app
 
-Working today, verified against a real Stickies container on macOS:
+```
+stickies2md                   # interactive menu: settings, logs, install/maintain
+stickies2md --start           # watch Stickies in the foreground (Ctrl-C stops)
+stickies2md --once            # export every note once, then exit
+stickies2md --once --dry-run  # show what would change, write nothing
+stickies2md --menubar         # macOS menu bar app (pip install '.[menubar]')
+```
 
-    stickies2md --once                # export every note, then exit
-    stickies2md --once --dry-run     # show what would change, write nothing
-
-The live watcher (`--start`), interactive settings menu, and macOS menu bar
-app arrive in Phase 2, built on the same engine patterns as
-[Duplicate-File-Preventer](https://github.com/RedBearAK/Duplicate-File-Preventer).
-Remaining verification items (Stickies' live-write pattern, the last five
-colour bands) are tracked in `dev_notes/MAC_FINDINGS.md`.
+Edits in Stickies reach the mirror about 15–20 seconds after you stop
+typing (Stickies autosaves ~10 s after the last change; the watcher adds a
+short debounce and settle). Colour, position and collapse changes rewrite
+the note too and are absorbed as "unchanged" unless the colour changed.
+Everything behavioural here was measured on a real Mac — see
+`dev_notes/MAC_FINDINGS.md`, whose "Phase 2 watcher rules" section is what
+the watcher implements.
 
 ## Setup
 
 ```
-pip install .
-stickies2md --set output_dir=~/Obsidian/Vault/Synced_from_Stickies
-stickies2md --once
+pip install '.[convert]'            # + '[menubar]' on macOS for the menu bar app
+stickies2md                         # menu > Settings > Mirror folder, then Start
 ```
+
+or without the menu:
+
+```
+stickies2md --set output_dir=~/Obsidian/Vault/Synced_from_Stickies
+stickies2md --install-command       # puts `stickies2md` on PATH, recording this venv
+stickies2md --start
+```
+
+### Terminal command and app bundle
+
+`--install-command` writes a tiny stub to `~/.local/bin/stickies2md` that
+records which interpreter (venv) to use; re-run it after rebuilding the
+venv and it repairs the path. It never edits shell rc files and never
+overwrites a file it did not write. `--uninstall-command` removes it. The
+menu's "Install / maintain" screen does the same and shows whether the
+stub points at the interpreter you are running.
+
+`--install-app` (macOS) writes `~/Applications/Stickies to Markdown.app`:
+a compiled launcher that starts `--menubar` from the recorded venv, ad-hoc
+signed with a **stable identifier** so the "access data from other apps"
+prompt appears in the app's own name and the grant follows the app. Add
+it to System Settings › General › Login Items to start at login. Re-run
+after a venv rebuild; `--uninstall-app` removes it. The identifier must
+never change — TCC grants are keyed to it.
+
+The menu bar app is deliberately small: a status icon (green watching,
+yellow problem, red stopped), Start/Stop, Export now, About, Quit.
+Settings and logs stay in the terminal and apply live.
 
 On macOS the first read of the Stickies container triggers a
 *"would like to access data from other apps"* prompt, attributed to the app
@@ -162,16 +195,22 @@ or `~/.config/stickies-to-markdown/` (Linux), JSON, hot-reload-friendly.
 
 ## Converter tiers
 
-1. **textutil** — Apple's built-in RTF→HTML (Cocoa HTML Writer), walked
-   into Markdown: bold/italic, ordered and unordered lists, attachments.
-   macOS only. Verified against real Stickies output.
-2. **text** — a small stdlib RTF text extractor: paragraphs, unicode
-   (including emoji), attachments listed. Runs anywhere; this is what the
-   Linux test suite exercises and the floor that can never produce nothing.
+1. **textutil** — Apple's built-in RTF→HTML (Cocoa HTML Writer): bold,
+   italic, real lists, attachments, indentation. macOS only. Verified
+   against real Stickies output.
+2. **pandoc** — `pandoc -f rtf -t html` through `pypandoc` (the
+   `pypandoc-binary` wheel bundles the binary). Any OS; the formatted path
+   on Linux and a fallback on macOS. Optional.
+3. **text** — a small stdlib RTF text extractor: paragraphs, unicode
+   (including emoji), attachments listed. Runs anywhere; the floor that
+   can never produce nothing.
 
-`auto` tries textutil then text. There is no PyObjC tier: the RTFD loader on
-`NSAttributedString` lives in AppKit, which the engine is not allowed to
-import (see `dev_notes/MAC_FINDINGS.md`).
+`auto` tries textutil, then pandoc, then text. Both HTML-producing tiers go
+through one HTML→Markdown stage (markdownify when installed, a stdlib
+walker otherwise) so escaping and line handling are identical. Pandoc's
+RTF reader needed two fixes to be usable (blank lines, emoji) — see
+`dev_notes/MAC_FINDINGS.md`. There is no PyObjC tier: the RTFD loader on
+`NSAttributedString` lives in AppKit, which the engine may not import.
 
 ## Development
 

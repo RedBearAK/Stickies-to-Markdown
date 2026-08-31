@@ -22,8 +22,8 @@ Steps:
     5  textutil tier-2 output on a real package
     6  colour calibration: every note's StickyColor as hue/sat + the name
        the engine assigns, for checking the hue bands in stickies.py
-    7  converter check: both tiers on EVERY package; lists which notes
-       carry bold/italic through textutil and shows those lines
+    7  converter check: every tier (textutil, pandoc, text) on EVERY
+       package; lists which notes carry bold/italic and shows those lines
     8  capture sanitised fixture candidates (only with --capture)
 
 Stdlib only. Safe on Linux with --stickies-dir pointing at test fixtures
@@ -372,7 +372,7 @@ def step_6_colors(log, args):
 # --- step 7 ----------------------------------------------------------------
 
 def step_7_converters(log, args):
-    log.section("7. Converter check: every package, both tiers")
+    log.section("7. Converter check: every package, every tier")
     src = Path(__file__).resolve().parent.parent / "src"
     if src.is_dir() and str(src) not in sys.path:
         sys.path.insert(0, str(src))
@@ -392,11 +392,11 @@ def step_7_converters(log, args):
     emphasis = re.compile(r"(?<!\\)\*\*[^*\n]+\*\*|(?<![\\*\w])\*[^*\\\n]+\*(?![*\w])")
     styled = []
     failures = []
-    log.line(f"  {'uuid8':<9} {'textutil':>9} {'text':>7}  emphasis  format    first line")
+    log.line(f"  {'uuid8':<9} {'textutil':>9} {'pandoc':>7} {'text':>7}  emphasis  format    first line")
     for pkg in packages:
         uuid8 = pkg.name[:8].lower()
         results = {}
-        for tier in ("textutil", "text"):
+        for tier in ("textutil", "pandoc", "text"):
             try:
                 markdown, _attachments, fmt = convert(str(pkg), tier)
                 results[tier] = markdown
@@ -405,11 +405,12 @@ def step_7_converters(log, args):
                 results[tier] = None
                 failures.append(f"{uuid8} {tier}: {type(error).__name__}: "
                                 f"{str(error)[:120]}")
-        tu, tx = results.get("textutil"), results.get("text")
+        tu, tx, tp = results.get("textutil"), results.get("text"), results.get("pandoc")
         runs = emphasis.findall(tu) if tu else []
         first = next((l for l in (tu or tx or "").splitlines()
                       if l.strip() and not l.startswith("```")), "")
-        log.line(f"  {uuid8:<9} {'-' if tu is None else len(tu):>9} {'-' if tx is None else len(tx):>7}  "
+        log.line(f"  {uuid8:<9} {'-' if tu is None else len(tu):>9} {'-' if tp is None else len(tp):>7} "
+                 f"{'-' if tx is None else len(tx):>7}  "
                  f"{len(runs):>8}  {results.get('format', '-'):<8}  {first[:40]}")
         if runs:
             styled.append((uuid8, runs, tu))

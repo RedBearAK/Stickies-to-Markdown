@@ -97,11 +97,52 @@ def test_error_exit_code():
                      f"rc={code} err={err!r}")
 
 
+def test_start_watches_and_stops_on_sigint():
+    import signal, subprocess, sys, time
+    from _helpers import wait_for
+    with Sandbox(debounce_seconds=0.3, settle_seconds=0.2) as box:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "stickies_to_markdown", "--config", str(box.config.config_file), "--start"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            env={**__import__("os").environ, "PYTHONPATH": str(__import__("_helpers")._SRC)})
+        ok = check(wait_for(lambda: len(box.mirror_files()) == 7, timeout=15),
+                   "--start performs the initial export", f"{[f.name for f in box.mirror_files()]}")
+        proc.send_signal(signal.SIGINT)
+        try:
+            out, _ = proc.communicate(timeout=15)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out = "(killed)"
+        ok &= check(proc.returncode == 0 and "Watching:" in out and "Stopped." in out,
+                    "--start announces the folders and stops cleanly on Ctrl-C",
+                    f"rc={proc.returncode} out={out[-400:]!r}")
+        return ok
+
+
+def test_install_flags_reach_the_writers():
+    import tempfile, os
+    with Sandbox() as box, tempfile.TemporaryDirectory() as tmp:
+        code, out, _ = _run(box, "--install-command", "--dir", tmp)
+        ok = check(code == 0 and os.path.isfile(os.path.join(tmp, "stickies2md")),
+                   "--install-command writes the stub", f"rc={code} out={out!r}")
+        code, out, _ = _run(box, "--uninstall-command", "--dir", tmp)
+        ok &= check(code == 0 and not os.path.exists(os.path.join(tmp, "stickies2md")),
+                    "--uninstall-command removes it", f"rc={code}")
+        code, out, _ = _run(box, "--install-app", "--app-dir", tmp)
+        ok &= check(code == 0 and os.path.isdir(os.path.join(tmp, "Stickies to Markdown.app")),
+                    "--install-app writes the bundle", f"rc={code} out={out[-200:]!r}")
+        code, out, _ = _run(box, "--uninstall-app", "--app-dir", tmp)
+        ok &= check(code == 0 and not os.path.exists(os.path.join(tmp, "Stickies to Markdown.app")),
+                    "--uninstall-app removes it", f"rc={code}")
+        return ok
+
+
 if __name__ == "__main__":
     tests = [test_once_exports_and_reports, test_missing_output_dir_exits_2_with_hint,
              test_per_run_override_not_saved, test_set_roundtrip_and_validation,
              test_show_config_lists_everything, test_dry_run_flag,
-             test_error_exit_code]
+             test_error_exit_code, test_start_watches_and_stops_on_sigint,
+             test_install_flags_reach_the_writers]
     exit(0 if run_suite("cli tests", tests) else 1)
 
 

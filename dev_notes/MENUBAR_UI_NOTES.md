@@ -34,3 +34,19 @@ Rules of thumb for alert text in this app:
   stop.
 
 # End of file #
+
+## Where things are (Phase 2)
+
+- `frontends/menubar.py` - rumps app; the threading contract is that only
+  timer/menu callbacks touch rumps. The engine's observer and worker
+  threads only touch the queue, counters and log.
+- `frontends/bundle.py` + `launcher_template.c` - `--install-app`. The
+  compiled launcher spawns the venv interpreter with `--menubar` and
+  waits (never exec), so the bundle is the responsible process for TCC.
+  `BUNDLE_ID` is a one-way door.
+- `frontends/icons/` - status PNGs (+@2x) are colour, not template
+  images, so they can carry the state colour. `make_app_icon.py`
+  regenerates `AppIcon.icns` with Pillow.
+- First-run expectation: the "access data from other apps" prompt in the
+  app's name. Don't Allow = silent permanent deny -> yellow icon with
+  "permission denied" in the status line; `tccutil reset` to re-prompt.

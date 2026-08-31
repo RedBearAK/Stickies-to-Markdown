@@ -35,7 +35,7 @@ FILENAME_STYLES = ("slug-uuid", "uuid")
 # "tombstone" is accepted as an alias of "archive" (earlier name).
 ON_DELETE_CHOICES = ("archive", "mark", "delete", "keep")
 ON_DELETE_ALIASES = {"tombstone": "archive"}
-CONVERTER_CHOICES = ("auto", "textutil", "text")
+CONVERTER_CHOICES = ("auto", "textutil", "pandoc", "text")
 FLAVOR_CHOICES = ("generic", "obsidian")
 
 
@@ -100,7 +100,7 @@ class Config:
             # instead of escaped. 0 in either disables.
             "code_block_min_escapes": 6,
             "code_block_density": 4.0,
-            "converter": "auto",                    # textutil|text
+            "converter": "auto",                    # textutil|pandoc|text
             "log_file": os.path.join(self.config_dir, LOG_FILENAME),
             "log_level": "INFO",
             "log_max_size": 10,                     # MB

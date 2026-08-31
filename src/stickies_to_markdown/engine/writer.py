@@ -143,8 +143,12 @@ def _file_hash(path):
             digest.update(chunk)
     return digest.hexdigest()
 
-def _strip_synced_at(text):
-    return re.sub(r"^synced-at:.*$", "", text, count=1, flags=re.MULTILINE)
+def _strip_volatile(text):
+    """Drop the keys that must not, by themselves, cause a rewrite:
+    synced-at (always now) and modified (TXT.rtf's mtime - Stickies replaces
+    that file on every save, including a colour change or a window move,
+    so it would churn every mirror file on every attribute fiddle)."""
+    return re.sub(r"^(synced-at|modified):.*$", "", text, flags=re.MULTILINE)
 
 
 class Writer:
@@ -153,13 +157,29 @@ class Writer:
         self.config = config
         self.events = events
         self.logger = logger or get_logger()
-        self.output_dir = config.output_dir()
-        if not self.output_dir:
+        if not config.output_dir():
             raise ValueError("output_dir is not configured")
-        self.dry_run = bool(config.get("dry_run"))
-        self.read_only = bool(config.get("read_only_output", True))
         self._mirror_index = None       # uuid -> filename, lazy
         self.last_excluded = []
+
+    # Read live so a hot-reloaded config (dry run toggled, folder changed)
+    # applies to the next note without rebuilding the writer.
+    @property
+    def output_dir(self):
+        return self.config.output_dir()
+
+    @property
+    def dry_run(self):
+        return bool(self.config.get("dry_run"))
+
+    @property
+    def read_only(self):
+        return bool(self.config.get("read_only_output", True))
+
+    def refresh_index(self):
+        """Forget the cached uuid->filename map (another process may have
+        written files); it is rebuilt on next use."""
+        self._mirror_index = None
 
     # --- public ------------------------------------------------------------
 
@@ -188,7 +208,7 @@ class Writer:
 
         rendered = self._render(note, markdown, existing_text)
         if existing_text is not None and (
-                _strip_synced_at(rendered) == _strip_synced_at(existing_text)):
+                _strip_volatile(rendered) == _strip_volatile(existing_text)):
             kind = "unchanged"
         else:
             self._write_atomic(target_path, rendered)
@@ -235,13 +255,20 @@ class Writer:
         keys = {}
         if self.config.get("front_matter", True):
             rtf_stat = self._stat(note.rtf_path)
+            # created: sticky once recorded. TXT.rtf is replaced on every
+            # save (new birth time), so the package DIRECTORY's birth time
+            # is the honest source the first time, and the existing mirror
+            # file's value thereafter.
+            existing_keys = split_front_matter(existing_text)[0] if existing_text else {}
+            dir_stat = self._stat(note.rtfd_path)
+            created = existing_keys.get("created") or self._iso(
+                getattr(dir_stat, "st_birthtime", None) or (dir_stat and dir_stat.st_mtime))
             keys = {
                 MARKER_KEY: MARKER_VALUE,
                 "stickies-uuid": note.uuid,
                 "color": note.color,
                 "color-hex": note.color_hex or "",
-                "created": self._iso(getattr(rtf_stat, "st_birthtime", None)
-                                     or (rtf_stat and rtf_stat.st_mtime)),
+                "created": created,
                 "modified": self._iso(rtf_stat and rtf_stat.st_mtime),
                 "source": note.rtfd_path,
                 "body-format": getattr(self, "_body_format", "markdown"),

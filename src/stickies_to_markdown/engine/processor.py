@@ -91,6 +91,7 @@ class NoteProcessor:
         self.counters = counters or Counters()
         self.logger = logger or get_logger()
         self.writer = Writer(config, events, self.logger)
+        self.notes_known = 0
 
     def is_excluded(self, note, markdown=None):
         """
@@ -157,6 +158,8 @@ class NoteProcessor:
             return self.counters
 
         notes = stickies.enumerate_notes(stickies_dir, self.logger)
+        self.notes_known = len(notes)
+        self.writer.refresh_index()
         self.logger.info(f"Export start: {len(notes)} notes in {stickies_dir}")
         excluded = set()
         for note in sorted(notes.values(), key=lambda n: n.uuid):

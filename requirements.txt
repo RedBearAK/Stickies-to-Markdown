@@ -1,2 +1,4 @@
-# Phase 1 (--once export) is stdlib-only. Uncomment when Phase 2 lands:
-# watchdog>=4.0
+# Runtime dependencies (read by pyproject.toml). Optional extras live in
+# pyproject.toml: [menubar] rumps, [convert] markdownify + pypandoc-binary.
+watchdog>=4.0
+rich>=13.0

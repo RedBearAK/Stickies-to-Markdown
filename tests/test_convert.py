@@ -5,7 +5,8 @@ from _helpers import FIXTURES, check, run_suite
 
 from stickies_to_markdown.engine.convert import (
     rtf_to_text, html_to_markdown, convert, list_attachments, escape_markdown,
-    needs_code_block, escape_density, first_content_line)
+    needs_code_block, escape_density, first_content_line,
+    html_to_markdown_fallback, pandoc_available)
 
 
 def test_paragraphs_and_escapes():
@@ -115,11 +116,19 @@ COCOA_HTML = """<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3
 
 
 def test_cocoa_html_writer_shape():
-    """Built from real textutil output (2026-08-30 log)."""
-    markdown = html_to_markdown(COCOA_HTML)
+    """Built from real textutil output (2026-08-30 log). Both HTML stages
+    (markdownify when installed, stdlib walker always) must agree."""
+    ok = True
+    for label, fn in (("stage", html_to_markdown), ("walker", html_to_markdown_fallback)):
+        ok &= _check_cocoa(fn(COCOA_HTML), label)
+    return ok
+
+
+def _check_cocoa(markdown, label):
+    ok = True
     lines = markdown.strip("\n").split("\n")
-    ok = check("Helpful Excel Functions" in markdown,
-               "body text survives <head> with void <meta> tags",
+    ok &= check("Helpful Excel Functions" in markdown,
+               f"{label}: body text survives <head> with void <meta> tags",
                f"lost body: {markdown!r}")
     ok &= check('=MID(B2,FIND(" ",B2)+1)' in markdown,
                 "colour spans are transparent", f"{markdown!r}")
@@ -172,6 +181,31 @@ def test_markdown_punctuation_escaped():
                 f"{markdown!r}")
     return ok
 
+def test_pandoc_tier_line_fidelity():
+    if not pandoc_available():
+        print("  - pandoc not installed here; tier skipped")
+        return True
+    ok = True
+    md, _a, _f = convert(str(FIXTURES / "22222222-BBBB-4BBB-8BBB-222222222222.rtfd"), "pandoc")
+    ok &= check(md == "Project ideas\n**Important:** ship the *first* version\n",
+                "pandoc: bold/italic rendered, lines single-spaced", repr(md))
+    md, _a, _f = convert(str(FIXTURES / "55555555-EEEE-4EEE-8EEE-555555555555.rtfd"), "pandoc")
+    ok &= check("\U0001f694" in md and "Caf\u00e9" in md,
+                "pandoc: surrogate-pair emoji fused, cp1252 escapes decoded", repr(md))
+    import tempfile
+    from pathlib import Path as _P
+    with tempfile.TemporaryDirectory() as tmp:
+        pkg = _P(tmp) / "ABCDEF00-0000-4000-8000-000000000000.rtfd"
+        pkg.mkdir()
+        (pkg / "TXT.rtf").write_bytes(
+            rb"{\rtf1\ansi\ansicpg1252{\fonttbl\f0\fswiss\fcharset0 Helvetica;}"
+            rb"\f0\fs24 one\par \par after blank\par}")
+        md, _a, _f = convert(str(pkg), "pandoc")
+        ok &= check(md == "one\n\nafter blank\n",
+                    "pandoc: blank lines preserved via par->line rewrite", repr(md))
+    return ok
+
+
 FORMULA_RTF = (rb'{\rtf1\ansi\ansicpg1252\cocoartf2761{\fonttbl\f0\fswiss\fcharset0 Helvetica;}'
                rb'\f0\fs24 Excel formulas\par =SUMIF($A$5:$A$57,"*U*",C5:C57)\par '
                rb'=SUMIF(C14:C54,"<>"&"*Total*",K14:K54)\par =MOD($B$3,2)\par}')
@@ -210,7 +244,7 @@ if __name__ == "__main__":
              test_convert_entry_point_falls_through,
              test_list_attachments_ignores_rtf_and_hidden, test_html_walker,
              test_cocoa_html_writer_shape, test_markdown_punctuation_escaped,
-             test_escape_dense_note_becomes_code_block]
+             test_escape_dense_note_becomes_code_block, test_pandoc_tier_line_fidelity]
     exit(0 if run_suite("conversion tests", tests) else 1)
 
 

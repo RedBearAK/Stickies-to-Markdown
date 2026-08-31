@@ -159,6 +159,24 @@ when a purple was requested.) The state file also carries `ControlColor`,
   Consequence for existing mirrors: every file rewrites once on the next
   export, since the body (and its hash) changes.
 
+## Pandoc as a converter (probed on Linux with pypandoc-binary 1.17 / pandoc 3.9)
+
+- The RTF reader works: bold/italic, `\'xx` and BMP `\uN` decode correctly.
+- **It drops empty paragraphs and makes every `\par` a paragraph**, so a
+  raw conversion double-spaces a note and loses its blank lines. Fix in
+  use: rewrite `\par` -> `\line` before conversion; each line becomes a hard
+  break and blank lines survive.
+- **Surrogate-pair emoji come out as `\ufffd\ufffd`.** Fix in use: fuse the
+  `\uHIGH ?\uLOW ?` pairs into the real character before conversion.
+- Its Markdown writer knows CommonMark escaping but not Obsidian (`#tag`,
+  `==`, `%%` pass through), and in `markdown_strict` a `- dash` line or a
+  trailing `---` after a hard break is still live syntax. So pandoc is used
+  as an RTF -> **HTML** reader only; the shared HTML -> Markdown stage
+  (markdownify + escape_markdown) does the escaping for every tier.
+- Leading tabs/indentation are dropped by the RTF reader (textutil keeps
+  them). Tier order is therefore textutil -> pandoc -> text; pandoc mainly
+  gives Linux the formatted path and macOS a fallback.
+
 ## Still open
 
 - [x] **Write mechanics** (replace, not rewrite; attribute changes save the
