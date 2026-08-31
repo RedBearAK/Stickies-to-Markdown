@@ -41,6 +41,7 @@ from stickies_to_markdown.engine.logsetup import get_logger
 MARKER_KEY = "synced-by"
 MARKER_VALUE = "stickies-to-markdown"
 MACHINE_KEY = "source-machine"
+MACHINE_ID_KEY = "source-machine-id"
 DELETED_KEY = "deleted-from-stickies"
 ATTACHMENTS_DIR = "attachments"
 CONFLICTS_DIR = "_conflicts"
@@ -284,6 +285,7 @@ class Writer:
             keys = {
                 MARKER_KEY: MARKER_VALUE,
                 MACHINE_KEY: self.config.machine_label(),
+                MACHINE_ID_KEY: self.config.machine_id(),
                 "stickies-uuid": note.uuid,
                 "color": note.color,
                 "color-hex": note.color_hex or "",
@@ -314,13 +316,22 @@ class Writer:
             self.logger.error(f"{path}: {message}")
             self.events.put(Event("error", path, message))
             return None
-        other = keys.get(MACHINE_KEY)
-        if other and other != self.config.machine_label():
+        if not self._is_this_machine(keys):
+            other = keys.get(MACHINE_KEY) or keys.get(MACHINE_ID_KEY)
             message = f"belongs to another machine ({other}); skipped - use a per-machine subfolder"
             self.logger.error(f"{path}: {message}")
             self.events.put(Event("error", path, message))
             return None
         return text
+
+    def _is_this_machine(self, keys):
+        """The stable id decides; the label is only consulted for files
+        written before ids existed. Files with neither are ours (legacy)."""
+        other_id = keys.get(MACHINE_ID_KEY)
+        if other_id:
+            return other_id == self.config.machine_id()
+        other = keys.get(MACHINE_KEY)
+        return not other or other == self.config.machine_label()
 
     def _quarantine_if_edited(self, path, existing_text, name):
         """True when the file was externally edited and has been moved aside."""
@@ -486,8 +497,7 @@ class Writer:
                 continue
             # Another Mac's mirror files in a shared folder are not ours to
             # rename, archive or delete: they belong to notes we cannot see.
-            other = keys.get(MACHINE_KEY)
-            if other and other != self.config.machine_label():
+            if not self._is_this_machine(keys):
                 continue
             index[keys["stickies-uuid"].strip('"')] = name
         self._mirror_index = index

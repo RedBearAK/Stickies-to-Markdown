@@ -280,8 +280,9 @@ class StickiesTUI:
                  f"{c.get('code_block_min_escapes')} / {c.get('code_block_density')}"),
                 ("5", "Dry run", "[cyan]ON[/cyan]" if c.get("dry_run") else "off"),
                 ("6", "Log level", c.get("log_level")),
-                ("7", "This machine's label", f"{c.machine_label()}"
-                 + ("  [dim](hostname)[/dim]" if not c.get("machine_label") else "")),
+                ("7", "This machine's label / id", f"{c.machine_label()}"
+                 + ("  [dim](hostname)[/dim]" if not c.get("machine_label") else "")
+                 + f"  [dim]/ {c.machine_id()}[/dim]"),
             ]
             self.console.print("[bold cyan]Global[/bold cyan]")
             table = Table(show_header=False, box=None, padding=(0, 2))
@@ -368,8 +369,9 @@ class StickiesTUI:
         self._set_choice("log_level", ("DEBUG", "INFO", "WARNING", "ERROR"), "Log level")
 
     def _set_g7(self):
-        self.console.print("[dim]Written as source-machine in every mirror file and usable as "
-                           "{machine} in an output's subfolder. Empty = this Mac's hostname.[/dim]")
+        self.console.print("[dim]The label is for humans (source-machine, {machine}); the id "
+                           f"({self.config.machine_id()}, from the hardware UUID) is what keeps "
+                           "machines apart and never changes. Empty label = hostname.[/dim]")
         value = self.ask("Machine label", default=self.config.get("machine_label") or "")
         self.config.set("machine_label", value.strip().lower())
 

@@ -341,10 +341,17 @@ def test_slug_style_collision_and_rename():
 
 def test_machine_identity_isolates_shared_folders():
     """Two Macs mirroring into one folder: neither touches the other's files."""
-    with Sandbox(machine_label="mac-a") as box:
+    with Sandbox(machine_label="mac-a", machine_id="aaaaaaaa") as box:
         _export(box)
         keys, _ = split_front_matter((box.output / "grocery-list--11111111.md").read_text(encoding="utf-8"))
-        ok = check(keys.get("source-machine") == "mac-a", "source-machine written", f"{keys}")
+        ok = check(keys.get("source-machine") == "mac-a" and keys.get("source-machine-id") == "aaaaaaaa",
+                   "source-machine and source-machine-id written", f"{keys}")
+        # Renaming the machine (label changes, id does not) must not orphan its own files.
+        box.config.set("machine_label", "mac-a-renamed")
+        counters = _export(box)
+        ok &= check(counters.deleted == 0 and counters.converted == 7,
+                    "hostname change: files still recognised as ours (rewritten with the new label)",
+                    f"{counters.as_dict()}")
         # Now "mac-b" runs against a container that lacks all of mac-a's notes.
         import shutil
         for pkg in box.note_dirs():
@@ -353,7 +360,7 @@ def test_machine_identity_isolates_shared_folders():
         pkg.mkdir()
         (pkg / "TXT.rtf").write_bytes(
             rb"{\rtf1\ansi{\fonttbl\f0\fswiss Helvetica;}\f0 Mac B note\par}")
-        box.config.set("machine_label", "mac-b")
+        box.config.update({"machine_label": "mac-b", "machine_id": "bbbbbbbb"})
         counters = _export(box)
         names = sorted(f.name for f in box.mirror_files())
         ok &= check(len(names) == 8 and "mac-b-note--bbbbbbbb.md" in names
@@ -363,9 +370,16 @@ def test_machine_identity_isolates_shared_folders():
 
 
 def test_machine_placeholder_in_subfolder():
-    with Sandbox(machine_label="studio", subfolder="Stickies/{machine}") as box:
-        return check(box.target.output_dir() == str(box.output / "Stickies" / "studio"),
-                     "{machine} expands in the subfolder", box.target.output_dir())
+    with Sandbox(machine_label="studio", machine_id="c0ffee00", subfolder="Stickies/{machine}") as box:
+        ok = check(box.target.output_dir() == str(box.output / "Stickies" / "studio"),
+                   "{machine} expands to the label", box.target.output_dir())
+        box.set_target("subfolder", "Stickies/{machine_id}")
+        ok &= check(box.target.output_dir() == str(box.output / "Stickies" / "c0ffee00"),
+                    "{machine_id} expands to the stable id", box.target.output_dir())
+        from stickies_to_markdown.engine.config import machine_id
+        ok &= check(len(machine_id()) == 8 and machine_id() == machine_id(),
+                    f"detected machine id is 8 hex and stable ({machine_id()})", "")
+        return ok
 
 
 def test_custom_deleted_dir_and_collision():

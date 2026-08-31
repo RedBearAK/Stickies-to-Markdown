@@ -29,8 +29,10 @@ import os
 import copy
 import json
 import socket
+import hashlib
 import platform
 import tempfile
+import subprocess
 
 
 CONFIG_FILENAME = "stickies_to_markdown.json"
@@ -106,14 +108,52 @@ def default_machine_label():
     return name or "unknown"
 
 
+_machine_id_cache = {}
+
+
+def machine_id():
+    """
+    8 hex chars derived from a hardware/OS identity that survives renames:
+    macOS IOPlatformUUID, Linux /etc/machine-id. Falls back to the MAC
+    address, then the hostname. Cached per process.
+    """
+    if "id" in _machine_id_cache:
+        return _machine_id_cache["id"]
+    raw = ""
+    try:
+        if platform.system() == "Darwin":
+            out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                                 capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                if "IOPlatformUUID" in line:
+                    raw = line.split("=", 1)[1].strip().strip('"')
+                    break
+        else:
+            for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+                if os.path.isfile(path):
+                    with open(path, "r", encoding="ascii", errors="ignore") as handle:
+                        raw = handle.read().strip()
+                    if raw:
+                        break
+    except (OSError, subprocess.SubprocessError):
+        raw = ""
+    if not raw:
+        import uuid
+        node = uuid.getnode()
+        raw = f"mac:{node:012x}" if not (node >> 40) & 1 else f"host:{socket.gethostname()}"
+    _machine_id_cache["id"] = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:8]
+    return _machine_id_cache["id"]
+
+
 class OutputTarget:
     """A read-only view of one output block with the resolved accessors the
     writer needs. Edits go through Config.set_target()."""
 
-    def __init__(self, data, machine_label=None):
+    def __init__(self, data, machine_label=None, machine_id_value=None):
         self.data = dict(TARGET_DEFAULTS)
         self.data.update(data or {})
         self.machine_label = machine_label or default_machine_label()
+        self.machine_id = machine_id_value or machine_id()
 
     def get(self, key, default=None):
         return self.data.get(key, default)
@@ -130,7 +170,8 @@ class OutputTarget:
     def subfolder(self):
         value = self.data.get("subfolder")
         value = DEFAULT_SUBFOLDER if value is None else str(value).strip().strip("/")
-        return value.replace("{machine}", self.machine_label)
+        return (value.replace("{machine}", self.machine_label)
+                     .replace("{machine_id}", self.machine_id))
 
     def output_dir(self):
         """Where files actually go: base/subfolder - unless the subfolder is
@@ -200,6 +241,10 @@ class Config:
             # Stickies do not sync between Macs, so two Macs sharing one
             # mirror folder must be told apart. "" = the short hostname.
             "machine_label": "",
+            # Stable identity (8 hex of the hardware UUID / machine-id), written
+            # as `source-machine-id`; this is what keeps two Macs' files apart
+            # even if one is renamed. "" = detect; set only to pin a value.
+            "machine_id": "",
             # --- outputs: one block per mirror folder (TARGET_DEFAULTS) ---
             "outputs": [],
         }
@@ -296,12 +341,17 @@ class Config:
         return (str(self.get("machine_label") or "").strip().lower()
                 or default_machine_label())
 
+    def machine_id(self):
+        """Stable 8-hex identity of this machine (see machine_id())."""
+        override = str(self.get("machine_id") or "").strip().lower()
+        return override or machine_id()
+
     # --- outputs -----------------------------------------------------------
 
     def targets(self):
         """Every configured output block, as OutputTarget objects."""
-        label = self.machine_label()
-        return [OutputTarget(block, label) for block in self.get("outputs") or []
+        label, mid = self.machine_label(), self.machine_id()
+        return [OutputTarget(block, label, mid) for block in self.get("outputs") or []
                 if isinstance(block, dict)]
 
     def target(self, name):

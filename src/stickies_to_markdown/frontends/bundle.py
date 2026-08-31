@@ -171,24 +171,48 @@ def recorded_interpreter(path):
     return None
 
 
-def codesign(path, out):
-    """Ad-hoc sign so the bundle has a stable identity for TCC. Mac only."""
+SIGN_IDENTITY_KEY = "S2MCodesignIdentity"     # remembered in Info.plist
+
+
+def recorded_sign_identity(path):
+    """The identity a previous --install-app signed with, or None."""
+    try:
+        with open(os.path.join(path, "Contents", "Info.plist"), "rb") as handle:
+            return plistlib.load(handle).get(SIGN_IDENTITY_KEY)
+    except (OSError, plistlib.InvalidFileException, ValueError):
+        return None
+
+
+def codesign(path, out, identity="-"):
+    """
+    Sign the bundle so it has a stable identity for TCC. Mac only.
+
+    "-" is ad-hoc: enough for the folder grants (Documents etc.), but the
+    newer "access data from other apps" grant has been seen to re-prompt on
+    every launch with an ad-hoc signature. A self-signed Code Signing
+    certificate (Keychain Access > Certificate Assistant > Create a
+    Certificate, type "Code Signing") gives TCC a real designated
+    requirement to persist against:  --install-app --sign-identity "Name".
+    """
     if sys.platform != "darwin" or not shutil.which("codesign"):
         return False
-    result = subprocess.run(["codesign", "--force", "--deep", "--sign", "-",
+    result = subprocess.run(["codesign", "--force", "--deep", "--sign", identity,
                              "--identifier", BUNDLE_ID, path],
                             capture_output=True, text=True)
     if result.returncode != 0:
-        out(f"codesign failed (bundle still works, TCC grants may not stick): "
-            f"{result.stderr.strip()}")
+        out(f"codesign with identity {identity!r} failed (bundle still works, TCC "
+            f"grants may not stick): {result.stderr.strip()}")
         return False
     return True
 
 
-def install_app(app_dir=None, interpreter=None, src_dir=None, name=APP_NAME, out=print):
+def install_app(app_dir=None, interpreter=None, src_dir=None, name=APP_NAME, out=print,
+                sign_identity=None):
     """
     Write (or refresh) the bundle. Returns its path, or None when it
-    refused to overwrite something it did not create.
+    refused to overwrite something it did not create. The signing identity
+    is remembered in Info.plist so re-runs keep using it; pass one to
+    change it ("-" for ad-hoc).
     """
     app_dir = os.path.abspath(app_dir or default_app_dir())
     interpreter = interpreter or sys.executable
@@ -200,6 +224,7 @@ def install_app(app_dir=None, interpreter=None, src_dir=None, name=APP_NAME, out
         return None
 
     existing = recorded_interpreter(path)
+    sign_identity = sign_identity or recorded_sign_identity(path) or "-"
     contents = os.path.join(path, "Contents")
     macos = os.path.join(contents, "MacOS")
     resources = os.path.join(contents, "Resources")
@@ -221,8 +246,10 @@ def install_app(app_dir=None, interpreter=None, src_dir=None, name=APP_NAME, out
             handle.write(launcher_text(interpreter, src_dir))
     os.chmod(launcher, os.stat(launcher).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
+    plist = info_plist(name)
+    plist[SIGN_IDENTITY_KEY] = sign_identity
     with open(os.path.join(contents, "Info.plist"), "wb") as handle:
-        plistlib.dump(info_plist(name), handle)
+        plistlib.dump(plist, handle)
 
     with open(os.path.join(contents, "PkgInfo"), "w", encoding="ascii") as handle:
         handle.write("APPL????")
@@ -239,8 +266,12 @@ def install_app(app_dir=None, interpreter=None, src_dir=None, name=APP_NAME, out
         out("  (no C compiler found: macOS will attribute folder permissions to the")
         out("   interpreter instead of the app; install the Xcode Command Line Tools")
         out("   with `xcode-select --install` and re-run --install-app to fix that)")
-    if codesign(path, out):
-        out("  signed: ad-hoc")
+    if codesign(path, out, sign_identity):
+        out(f"  signed:      {'ad-hoc' if sign_identity == '-' else sign_identity}")
+        if sign_identity == "-":
+            out("  (if the 'access data from other apps' prompt returns on every launch,")
+            out("   sign with a self-signed certificate: --install-app --sign-identity NAME;")
+            out("   see README > Terminal command and app bundle)")
 
     out("")
     out("Next steps:")

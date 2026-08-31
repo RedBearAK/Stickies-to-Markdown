@@ -72,6 +72,9 @@ def build_parser():
                       help="write the macOS .app bundle (default ~/Applications)")
     inst.add_argument("--uninstall-app", action="store_true")
     inst.add_argument("--app-dir", metavar="DIR", help="bundle directory")
+    inst.add_argument("--sign-identity", metavar="NAME",
+                      help="codesign identity for --install-app (a Keychain certificate "
+                           "name; '-' = ad-hoc). Remembered for later re-installs.")
     over = parser.add_argument_group("per-run overrides (not saved)")
     over.add_argument("--dry-run", "-d", action="store_true",
                       help="log and report, write nothing")
@@ -102,7 +105,7 @@ def run_cli(argv):
         return 0 if uninstall_command(bin_dir=args.dir) else 1
     if args.install_app:
         from stickies_to_markdown.frontends.bundle import install_app
-        return 0 if install_app(app_dir=args.app_dir) else 1
+        return 0 if install_app(app_dir=args.app_dir, sign_identity=args.sign_identity) else 1
     if args.uninstall_app:
         from stickies_to_markdown.frontends.bundle import uninstall_app
         return 0 if uninstall_app(app_dir=args.app_dir) else 1

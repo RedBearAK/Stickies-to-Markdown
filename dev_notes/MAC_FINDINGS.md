@@ -22,6 +22,15 @@ assumption in the handoff §4 or in Phase 1 code.
   exact service name for this category is still to be confirmed via
   `log show --last 5m --predicate 'subsystem == "com.apple.TCC"'`.
 
+- **Observed with the menu bar app (2026-08-30):** the "access data from
+  other apps" prompt reappears on EVERY launch of the ad-hoc-signed bundle,
+  while the Documents grant from the same bundle persists. Hypothesis: that
+  service persists against the designated requirement and an ad-hoc
+  signature has none it will keep. Mitigation shipped: `--install-app
+  --sign-identity NAME` with a self-signed Code Signing certificate.
+  Unverified until tried; the TCC log predicate in the README shows the
+  decision either way.
+
 ## Container and packages
 
 - Path exactly as assumed: `~/Library/Containers/com.apple.Stickies/Data/Library/Stickies/`

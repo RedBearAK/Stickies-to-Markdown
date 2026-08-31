@@ -64,6 +64,17 @@ it to System Settings › General › Login Items to start at login. Re-run
 after a venv rebuild; `--uninstall-app` removes it. The identifier must
 never change — TCC grants are keyed to it.
 
+**If that prompt comes back on every launch** (seen with the default ad-hoc
+signature while the Documents grant sticks), sign with a real identity:
+in Keychain Access, Certificate Assistant › Create a Certificate, name it
+e.g. `Stickies2md Signing`, type *Code Signing*; then
+`stickies2md --install-app --sign-identity "Stickies2md Signing"`. The
+identity is remembered for later re-installs. To see what TCC decided:
+
+```
+log show --last 10m --predicate 'subsystem == "com.apple.TCC"' | grep -iE 'stickies|AppData'
+```
+
 The menu bar app is deliberately small: a status icon (green watching,
 yellow problem, red stopped), Start/Stop, Export now, About, Quit.
 Settings and logs stay in the terminal and apply live.
@@ -124,11 +135,13 @@ just when two notes share a first line; `slug-uuid` (default) — always
 suffixed, so a retitled note is trivially tracked; `uuid` — the uuid8 alone.
 Attachments are copied to `attachments/<uuid8>/` and linked from the body.
 
-Every file also records `source-machine`. Stickies do not sync between
-Macs, so two Macs mirroring into one shared folder would otherwise each
-see the other's files as vanished notes; a writer only ever manages files
-from its own machine, and `{machine}` in an output's `subfolder` keeps
-them in separate folders (`Synced_from_Stickies/{machine}`).
+Every file also records `source-machine` (a label: the hostname unless you
+set one) and `source-machine-id` (8 hex characters of the hardware UUID on
+macOS, `/etc/machine-id` on Linux — stable across renames and OS
+reinstalls). Stickies do not sync between Macs, so two Macs mirroring into
+one shared folder would otherwise each see the other's files as vanished
+notes; a writer manages only files whose id is its own. `{machine}` or
+`{machine_id}` in an output's `subfolder` keeps them in separate folders.
 
 ## Safety rules
 
@@ -201,7 +214,8 @@ into a single block named `default` the first time it is read.
 | `debounce_seconds` / `settle_seconds` | `3.0` / `1.0` | watcher timing, calibrated to Stickies' autosave |
 | `code_block_min_escapes` / `code_block_density` | `6` / `4.0` | when a note becomes a fenced code block (see below) |
 | `dry_run` | `false` | log and report, write nothing |
-| `machine_label` | *(hostname)* | this Mac's name in `source-machine` and `{machine}` |
+| `machine_label` | *(hostname)* | this Mac's human name: `source-machine`, `{machine}` |
+| `machine_id` | *(detected)* | stable identity: `source-machine-id`, `{machine_id}`; set only to pin |
 
 | output key | default | meaning |
 | --- | --- | --- |

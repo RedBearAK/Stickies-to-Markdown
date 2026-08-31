@@ -133,6 +133,18 @@ def test_compiled_launcher_forwards_sigterm():
         return check(rc == 143, f"SIGTERM forwarded; launcher exited with the child's code ({rc})", f"rc={rc}")
 
 
+def test_sign_identity_is_remembered():
+    from stickies_to_markdown.frontends.bundle import recorded_sign_identity
+    with tempfile.TemporaryDirectory() as tmp:
+        path = install_app(tmp, out=lambda _: None)
+        ok = check(recorded_sign_identity(path) == "-", "default identity ad-hoc", "")
+        install_app(tmp, out=lambda _: None, sign_identity="My Cert")
+        ok &= check(recorded_sign_identity(path) == "My Cert", "identity recorded in Info.plist", "")
+        install_app(tmp, out=lambda _: None)
+        ok &= check(recorded_sign_identity(path) == "My Cert", "re-install without the flag keeps it", "")
+        return ok
+
+
 def test_reinstall_and_foreign_bundle():
     with tempfile.TemporaryDirectory() as tmp:
         path = install_app(tmp, out=lambda _: None)
@@ -158,7 +170,7 @@ def test_reinstall_and_foreign_bundle():
 if __name__ == "__main__":
     tests = [test_bundle_structure, test_compiled_and_script_launchers,
              test_launchers_run_and_reach_the_dispatcher, test_compiled_launcher_forwards_sigterm,
-             test_reinstall_and_foreign_bundle]
+             test_sign_identity_is_remembered, test_reinstall_and_foreign_bundle]
     exit(0 if run_suite("bundle tests", tests) else 1)
 
 
