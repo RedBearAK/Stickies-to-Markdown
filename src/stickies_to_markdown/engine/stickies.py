@@ -85,6 +85,44 @@ class Note:
         return f"Note({self.uuid8}, color={self.color!r})"
 
 
+# Files that only Full Disk Access can read, always present, and (unlike the
+# Stickies container) NOT behind a prompting TCC service: the probe is silent.
+# tccd adds the responsible app to the Full Disk Access list, switched off,
+# the first time it is refused - which is how apps "already appear" there.
+_FDA_CANARIES = (
+    "~/Library/Application Support/com.apple.TCC/TCC.db",
+    "~/Library/Safari/CloudTabs.db",
+    "~/Library/Mail",
+)
+
+
+def full_disk_access():
+    """
+    True / False when a canary settles it, None when none could (all
+    missing, or not macOS). Attributed by TCC to the responsible app, so
+    from the menu bar app this answers for the bundle.
+    """
+    import sys
+    if sys.platform != "darwin":
+        return None
+    for canary in _FDA_CANARIES:
+        path = os.path.expanduser(canary)
+        try:
+            if os.path.isdir(path):
+                os.listdir(path)
+            else:
+                fd = os.open(path, os.O_RDONLY)
+                os.close(fd)
+            return True
+        except PermissionError:
+            return False
+        except FileNotFoundError:
+            continue
+        except OSError:
+            continue
+    return None
+
+
 def container_readable(stickies_dir):
     """
     (readable: bool, reason: str). The §3.4 health probe: a denied TCC

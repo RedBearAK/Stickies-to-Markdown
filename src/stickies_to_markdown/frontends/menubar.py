@@ -14,12 +14,14 @@ narrow column: label above, command below, no inline comments
 
 import os
 import signal
+import subprocess
 
 import rumps    # ImportError here is caught by __main__ with a helpful message
 
 from rumps.rumps import NSApplication    # rumps already imported AppKit; reuse it
 
 from stickies_to_markdown.engine import Config, Engine, EngineError
+from stickies_to_markdown.engine.stickies import full_disk_access
 
 
 # Full-color icons rather than macOS "template" images, so the status
@@ -32,6 +34,7 @@ ICON_STOPPED = os.path.join(ICON_DIR, "stopped.png")
 ICON_PROBLEM = os.path.join(ICON_DIR, "problem.png")
 
 TICK_SECONDS = 0.5
+FDA_PANE_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
 
 # NSApplicationActivationPolicyAccessory: no Dock tile, no main menu bar.
 # The same thing LSUIElement=true does for a bundle, but set from code so
@@ -59,11 +62,48 @@ class StickiesApp(rumps.App):
         self.toggle_item = rumps.MenuItem("Start watching", callback=self.toggle)
         self.export_item = rumps.MenuItem("Export all notes now", callback=self.export_now)
         self.about_item = rumps.MenuItem("About / Help", callback=self.show_about)
+        self.fda_item = rumps.MenuItem("Grant Full Disk Access...", callback=self.grant_fda)
         self.quit_item = rumps.MenuItem("Quit", callback=self.quit)
-        self.menu = [self.status_item, None, self.toggle_item, self.export_item, None,
-                     self.about_item, self.quit_item]
+        self.menu = [self.status_item, None, self.toggle_item, self.export_item,
+                     self.fda_item, None, self.about_item, self.quit_item]
+        self._fda = full_disk_access()          # True / False / None(unknown)
+        self._fda_asked = False
+        self._autostart_pending = False
         self._tick_timer = rumps.Timer(self._tick, TICK_SECONDS)
         self._tick_timer.start()
+
+    # --- Full Disk Access ----------------------------------------------------
+
+    def needs_fda(self):
+        return self._fda is False
+
+    def grant_fda(self, _=None):
+        """Open the pane and explain the switch. The app is already listed
+        (switched off) because the probe was refused."""
+        bring_to_front()
+        choice = rumps.alert(
+            title="Full Disk Access",
+            message=("Stickies to Markdown reads Apple Stickies'\n"
+                     "data. Without Full Disk Access macOS\n"
+                     "asks for permission on every launch.\n\n"
+                     "In the pane that opens, turn on the\n"
+                     "switch next to Stickies to Markdown.\n"
+                     "Watching starts by itself once granted."),
+            ok="Open System Settings", cancel="Later")
+        if choice == 1:
+            subprocess.run(["open", FDA_PANE_URL])
+            self._autostart_pending = True
+
+    def _recheck_fda(self):
+        was = self._fda
+        self._fda = full_disk_access()
+        if was is False and self._fda and self._autostart_pending:
+            self._autostart_pending = False
+            if self.engine.config.has_outputs() and not self.engine.status().monitoring:
+                try:
+                    self.engine.start()
+                except Exception:       # noqa: BLE001 - status line will say
+                    pass
 
     def show_about(self, _):
         bring_to_front()
@@ -77,11 +117,24 @@ class StickiesApp(rumps.App):
                      "Live log:\n"
                      "stickies2md --follow-log\n\n"
                      "Yellow icon = a problem; the status\n"
-                     "line and the log say which."))
+                     "line and the log say which.\n\n"
+                     "Asked for permission at every\n"
+                     "launch? Grant the app Full Disk\n"
+                     "Access once in System Settings."))
 
     def toggle(self, _):
         if self.engine.status().monitoring:
             self.engine.stop()
+        elif self.needs_fda() and not self._fda_asked:
+            self._fda_asked = True
+            self.grant_fda()
+            if self._autostart_pending:
+                return              # will start when the switch is flipped
+            # "Later": fall through and start anyway (per-launch prompt path)
+            try:
+                self.engine.start()
+            except Exception as error:      # noqa: BLE001
+                rumps.alert(title="Cannot start", message=str(error))
         elif not self.engine.config.has_outputs():
             bring_to_front()
             rumps.alert(title="No mirror folder yet",
@@ -116,10 +169,20 @@ class StickiesApp(rumps.App):
     def _tick(self, _timer):
         self.engine.events.drain()          # the log has the details
         self.engine.reload_config_if_changed()
+        if self._fda is False:
+            self._recheck_fda()             # cheap; flips as soon as the switch is on
         self._refresh()
 
     def _refresh(self):
         st = self.engine.status()
+        self.fda_item.title = ("Grant Full Disk Access..." if self.needs_fda()
+                               else "Full Disk Access: granted")
+        self.fda_item.set_callback(self.grant_fda if self.needs_fda() else None)
+        if self.needs_fda() and not st.monitoring:
+            self.icon = ICON_PROBLEM
+            self.status_item.title = "Needs Full Disk Access - see menu"
+            self.toggle_item.title = "Start watching"
+            return
         if not st.healthy:
             self.icon = ICON_PROBLEM
             self.status_item.title = f"Problem: {st.last_error or 'see log'}"
@@ -148,12 +211,21 @@ def run_menubar(config=None):
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
 
-    try:
+    def autostart(_timer):
+        """Runs once the event loop is up (alerts need it)."""
+        autostart_timer.stop()
+        if app.needs_fda():
+            app.grant_fda()         # offers the pane; starts by itself when granted
+            return
         if engine.config.has_outputs():
             try:
                 engine.start()
             except Exception:       # noqa: BLE001 - icon shows stopped; Start explains
                 pass
+
+    autostart_timer = rumps.Timer(autostart, 0.2)
+    autostart_timer.start()
+    try:
         app.run()
     finally:
         engine.stop()

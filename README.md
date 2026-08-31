@@ -64,13 +64,29 @@ it to System Settings › General › Login Items to start at login. Re-run
 after a venv rebuild; `--uninstall-app` removes it. The identifier must
 never change — TCC grants are keyed to it.
 
-**If that prompt comes back on every launch**, TCC is storing the grant
-session-scoped. The default signing now sets an identifier-based designated
-requirement precisely to avoid that (`codesign -dr -` on the bundle should
-show `designated => identifier "com.redbearak.stickies-to-markdown"`; re-run
-`--install-app` if it shows a `cdhash` instead). Should it persist anyway,
-`--install-app --sign-identity NAME` signs with a Keychain certificate; the
-identity is remembered for later re-installs. To see what TCC decided:
+**The prompt comes back on every launch** with the default ad-hoc signature:
+macOS stores that particular grant only for the session when the app has no
+signing certificate (the TCC log says `Session scoped auth is invalid`).
+Two ways out:
+
+1. **Full Disk Access, once** (recommended, and the app walks you through
+   it). On launch the app checks for FDA with a silent probe; if missing it
+   offers to open the Full Disk Access pane, where it is already listed
+   (macOS adds an app to that list the first time it is refused) — flip the
+   switch and watching starts by itself. FDA persists by bundle identifier
+   regardless of signature and covers the Stickies container, so the
+   per-launch prompt never fires. Broader than the app needs, but
+   deterministic. "Later" starts anyway, with the per-launch prompt.
+2. **A signing certificate.** `stickies2md --install-app --self-sign`
+   (experimental) creates a self-signed Code Signing certificate in your
+   login keychain and signs with it; macOS asks for your password during
+   the keychain steps. Whether tccd persists grants against a self-signed
+   certificate is unverified — an Apple Development certificate (free Apple
+   ID + Xcode) is the version known to work, via
+   `--install-app --sign-identity "Apple Development: you@..."`. The
+   identity is remembered for later re-installs.
+
+To see what TCC decided:
 
 ```
 log show --last 10m --predicate 'subsystem == "com.apple.TCC"' | grep -iE 'stickies|AppData'
