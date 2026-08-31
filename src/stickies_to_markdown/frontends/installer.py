@@ -98,13 +98,13 @@ def install_command(bin_dir=None, name=COMMAND_NAME, interpreter=None, out=print
     path = stub_path(bin_dir, name)
 
     if os.path.exists(path) and not is_our_stub(path):
-        out(f"Refusing to overwrite {path}: it is not a launcher stub written by this tool.")
+        out(f"Refusing to overwrite '{path}': it is not a launcher stub written by this tool.")
         out("Remove it yourself, or pick another location with --dir.")
         return None
 
     existing = recorded_interpreter(path)
     if existing == interpreter:
-        out(f"Launcher already current: {path}")
+        out(f"Launcher already current: '{path}'")
     else:
         os.makedirs(bin_dir, exist_ok=True)
         with open(path, 'w', encoding='utf-8', newline='') as handle:
@@ -113,8 +113,8 @@ def install_command(bin_dir=None, name=COMMAND_NAME, interpreter=None, out=print
             mode = os.stat(path).st_mode
             os.chmod(path, mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         verb = "Updated" if existing else "Installed"
-        out(f"{verb} launcher: {path}")
-        out(f"  interpreter: {interpreter}")
+        out(f"{verb} launcher: '{path}'")
+        out(f"  interpreter: '{interpreter}'")
 
     if dir_on_path(bin_dir):
         out(f"{bin_dir} is on your PATH; run `{name}` from any terminal.")
@@ -131,14 +131,14 @@ def uninstall_command(bin_dir=None, name=COMMAND_NAME, out=print):
     path = stub_path(bin_dir, name)
 
     if not os.path.exists(path):
-        out(f"No launcher at {path}")
+        out(f"No launcher at '{path}'")
         return False
     if not is_our_stub(path):
-        out(f"Refusing to remove {path}: it is not a launcher stub written by this tool.")
+        out(f"Refusing to remove '{path}': it is not a launcher stub written by this tool.")
         return False
 
     os.remove(path)
-    out(f"Removed launcher: {path}")
+    out(f"Removed launcher: '{path}'")
     return True
 
 

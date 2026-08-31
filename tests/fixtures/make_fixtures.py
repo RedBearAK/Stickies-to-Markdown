@@ -86,7 +86,7 @@ def main():
             (package / name).write_bytes(data)
 
     # Real state-file shape (verified on macOS 2026-08-30): the top level
-    # is a LIST of per-note dicts; colour is a float RGBA dict.
+    # is a LIST of per-note dicts; color is a float RGBA dict.
     def rgba(name):
         r, g, b = COLORS[name]
         return {"Red": r, "Green": g, "Blue": b, "Alpha": 1.0}

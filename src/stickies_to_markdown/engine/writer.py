@@ -163,7 +163,7 @@ def _file_hash(path):
 def _strip_volatile(text):
     """Drop the keys that must not, by themselves, cause a rewrite:
     synced-at (always now) and modified (TXT.rtf's mtime - Stickies replaces
-    that file on every save, including a colour change or a window move,
+    that file on every save, including a color change or a window move,
     so it would churn every mirror file on every attribute fiddle)."""
     return re.sub(r"^(synced-at|modified):.*$", "", text, flags=re.MULTILINE)
 
@@ -238,7 +238,7 @@ class Writer:
             self._index()[note.uuid] = target_name
             kind = "converted"
             self.logger.info(f"{'DRY RUN: would write' if self.dry_run else 'Wrote'}"
-                             f" {target_name}")
+                             f" '{target_name}'")
 
         if self.target.get("include_attachments", True):
             self._copy_attachments(note, attachments)
@@ -263,7 +263,7 @@ class Writer:
             if vault:
                 taken = obsidian.install_snippet(vault, dry_run=self.dry_run)
                 for action in taken:
-                    self.logger.info(f"Obsidian ({vault}): {action}")
+                    self.logger.info(f"Obsidian ('{vault}'): {action}")
                 actions += taken
         return actions
 
@@ -288,7 +288,7 @@ Stickies-to-Markdown. Stickies is the only place to edit them.
 - **Edits made in Stickies appear here** about 15-20 seconds after you stop
   typing (Stickies autosaves ~10 s after the last change).
 - **A sticky deleted in Stickies:** its file is {policy}.
-- **Colours** are recorded in each note's properties (`color`, `color-hex`)
+- **Colors** are recorded in each note's properties (`color`, `color-hex`)
   and, for the `obsidian` flavor, as `cssclasses` that a vault CSS snippet
   styles.
 - **Stickies do not sync between Macs.** Every note names the Mac it came
@@ -311,14 +311,14 @@ in a terminal.
         if existing is not None:
             keys, _ = split_front_matter(existing)
             if keys.get(MARKER_KEY) != MARKER_VALUE:
-                self.logger.error(f"{README_NAME}: exists but is not ours; left alone")
+                self.logger.error(f"'{README_NAME}': exists but is not ours; left alone")
                 return []
             if existing == rendered:
                 return []
         if not self.dry_run:
             os.makedirs(self.output_dir, exist_ok=True)
             self._write_atomic(path, rendered)
-        self.logger.info(f"{'Would write' if self.dry_run else 'Wrote'} {README_NAME}")
+        self.logger.info(f"{'Would write' if self.dry_run else 'Wrote'} '{README_NAME}'")
         return ["wrote readme"]
 
     def handle_deletions(self, live_uuids, excluded_uuids=()):
@@ -390,13 +390,13 @@ in a terminal.
         keys, _body = split_front_matter(text)
         if keys.get(MARKER_KEY) != MARKER_VALUE:
             message = "exists but was not written by this tool; skipped"
-            self.logger.error(f"{path}: {message}")
+            self.logger.error(f"'{path}': {message}")
             self.events.put(Event("error", path, message))
             return None
         if not self._is_this_machine(keys):
             other = keys.get(MACHINE_KEY) or keys.get(MACHINE_ID_KEY)
             message = f"belongs to another machine ({other}); skipped - use a per-machine subfolder"
-            self.logger.error(f"{path}: {message}")
+            self.logger.error(f"'{path}': {message}")
             self.events.put(Event("error", path, message))
             return None
         return text
@@ -422,7 +422,7 @@ in a terminal.
         conflict_dir = os.path.join(self.output_dir, CONFLICTS_DIR)
         conflict_path = os.path.join(conflict_dir, f"{name[:-3]}.{stamp}.md")
         self.logger.warning(f"Externally edited mirror file quarantined: "
-                            f"{name} -> {CONFLICTS_DIR}/")
+                            f"'{name}' -> '{CONFLICTS_DIR}/'")
         if not self.dry_run:
             os.makedirs(conflict_dir, exist_ok=True)
             shutil.move(path, conflict_path)
@@ -431,7 +431,7 @@ in a terminal.
     def _remove_renamed(self, name):
         """A retitled note: the stale filename goes; content lives on."""
         path = os.path.join(self.output_dir, name)
-        self.logger.info(f"renamed: removing stale {name}"
+        self.logger.info(f"renamed: removing stale '{name}'"
                          f"{' (dry run)' if self.dry_run else ''}")
         if not self.dry_run and os.path.exists(path):
             os.remove(path)
@@ -441,7 +441,7 @@ in a terminal.
         path = os.path.join(self.output_dir, name)
         uuid8 = uuid.replace("-", "")[:8].lower()
         attachments = os.path.join(self.output_dir, ATTACHMENTS_DIR, uuid8)
-        self.logger.info(f"{reason}: {name} -> {policy}"
+        self.logger.info(f"{reason}: '{name}' -> {policy}"
                          f"{' (dry run)' if self.dry_run else ''}")
         if self.dry_run or not os.path.exists(path) or policy == "keep":
             return
@@ -477,7 +477,7 @@ in a terminal.
         with open(path, "r", encoding="utf-8") as handle:
             text = handle.read()
         if not text.startswith("---\n"):
-            self.logger.warning(f"{os.path.basename(path)}: no front matter, "
+            self.logger.warning(f"'{os.path.basename(path)}': no front matter, "
                                 f"cannot annotate deletion")
             return False
         end = text.find("\n---\n", 4)
@@ -547,7 +547,7 @@ in a terminal.
                     shutil.copyfile(source, temp_path)
                     os.replace(temp_path, dest)
                 self.logger.info(f"Attachment {'would copy' if self.dry_run else 'copied'}:"
-                                 f" {note.uuid8}/{name}")
+                                 f" '{note.uuid8}/{name}'")
             except OSError as error:
                 self.events.put(Event("error", source, f"attachment: {error}"))
 

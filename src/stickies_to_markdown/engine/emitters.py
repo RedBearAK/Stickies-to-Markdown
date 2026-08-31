@@ -4,7 +4,7 @@ consumer of an output folder. They never transform the body and never do
 I/O, so composition is a dict merge and a duplicate key is a config error,
 never a silent last-write-wins.
 
-Generic keys (marker, uuid, colour, hash, timestamps) come from the writer
+Generic keys (marker, uuid, color, hash, timestamps) come from the writer
 and belong to every flavor. Consumer-specific vocabulary lives here. An
 output may name several flavors ("obsidian, sticky-notes"); their keys are
 merged.
@@ -21,7 +21,7 @@ Plugin vocabularies below were read from each plugin's source
                                         yellow/mint/blue/lavender/pink/gray/default
   obsidian                              `cssclasses` for a CSS snippet (no plugin)
 
-Desktop Sticky Notes (y-usuzumi) keeps colours in its own settings by file
+Desktop Sticky Notes (y-usuzumi) keeps colors in its own settings by file
 path, not in front matter, so no flavor can reach it.
 """
 

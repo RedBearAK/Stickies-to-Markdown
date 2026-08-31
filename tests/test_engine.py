@@ -93,7 +93,7 @@ def test_attribute_rewrite_is_unchanged_not_suppressed():
             got = wait_for(lambda: [e for e in engine.events.drain()
                                     if e.kind in ("unchanged", "converted")] or None, timeout=8)
             return check(got and got[0].kind == "unchanged",
-                         "identical rewrite (colour/move) counted as unchanged",
+                         "identical rewrite (color/move) counted as unchanged",
                          f"{got}")
         finally:
             engine.stop()
@@ -201,7 +201,7 @@ def test_recolour_to_excluded_removes_file():
             _replace_rtf(pkg, (pkg / "TXT.rtf").read_bytes())
             ok = check(wait_for(lambda: not (box.output / "grocery-list--11111111.md").exists(),
                                 timeout=8),
-                       "note recoloured to an excluded colour -> mirror file removed",
+                       "note recoloured to an excluded color -> mirror file removed",
                        f"{_mirror_names(box)}")
             return ok
         finally:

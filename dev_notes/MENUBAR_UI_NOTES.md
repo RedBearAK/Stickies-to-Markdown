@@ -44,8 +44,8 @@ Rules of thumb for alert text in this app:
   compiled launcher spawns the venv interpreter with `--menubar` and
   waits (never exec), so the bundle is the responsible process for TCC.
   `BUNDLE_ID` is a one-way door.
-- `frontends/icons/` - status PNGs (+@2x) are colour, not template
-  images, so they can carry the state colour. `make_icons.py` regenerates
+- `frontends/icons/` - status PNGs (+@2x) are color, not template
+  images, so they can carry the state color. `make_icons.py` regenerates
   all of them plus `AppIcon.icns` with Pillow. They are this app's own
   sticky-silhouette artwork; the first Phase 2 build shipped DFP's status
   PNGs copied verbatim (the handoff called them "generic" glyphs), so the

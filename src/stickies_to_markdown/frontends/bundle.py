@@ -61,7 +61,7 @@ def package_src_dir():
 
 
 def launcher_text(interpreter, src_dir):
-    """Shell fallback: same behaviour as the C launcher, weaker TCC attribution."""
+    """Shell fallback: same behavior as the C launcher, weaker TCC attribution."""
     return (
         "#!/bin/sh\n"
         f"{MARKER}\n"
@@ -196,9 +196,15 @@ def codesign(path, out, identity="-"):
     """
     if sys.platform != "darwin" or not shutil.which("codesign"):
         return False
-    result = subprocess.run(["codesign", "--force", "--deep", "--sign", identity,
-                             "--identifier", BUNDLE_ID, path],
-                            capture_output=True, text=True)
+    command = ["codesign", "--force", "--deep", "--sign", identity, "--identifier", BUNDLE_ID]
+    if identity == "-":
+        # An ad-hoc signature's designated requirement is a bare cdhash, and
+        # tccd stores grants against that as SESSION-SCOPED ("Session scoped
+        # auth is invalid for client" in the TCC log, then a fresh prompt on
+        # every launch - observed 2026-08-30). An explicit identifier-based
+        # requirement gives TCC something stable to persist against.
+        command += ["--requirements", f'=designated => identifier "{BUNDLE_ID}"']
+    result = subprocess.run(command + [path], capture_output=True, text=True)
     if result.returncode != 0:
         out(f"codesign with identity {identity!r} failed (bundle still works, TCC "
             f"grants may not stick): {result.stderr.strip()}")
@@ -220,7 +226,7 @@ def install_app(app_dir=None, interpreter=None, src_dir=None, name=APP_NAME, out
     path = bundle_path(app_dir, name)
 
     if os.path.exists(path) and not is_our_bundle(path):
-        out(f"Refusing to overwrite {path}: it is not a bundle written by this tool.")
+        out(f"Refusing to overwrite '{path}': it is not a bundle written by this tool.")
         return None
 
     existing = recorded_interpreter(path)
@@ -258,9 +264,9 @@ def install_app(app_dir=None, interpreter=None, src_dir=None, name=APP_NAME, out
         shutil.copyfile(ICON_SOURCE, os.path.join(resources, "AppIcon.icns"))
 
     verb = "Updated" if existing else "Installed"
-    out(f"{verb} app bundle: {path}")
-    out(f"  interpreter: {interpreter}")
-    out(f"  package dir: {src_dir}")
+    out(f"{verb} app bundle: '{path}'")
+    out(f"  interpreter: '{interpreter}'")
+    out(f"  package dir: '{src_dir}'")
     out(f"  launcher:    {kind}")
     if kind == "script":
         out("  (no C compiler found: macOS will attribute folder permissions to the")
@@ -269,9 +275,8 @@ def install_app(app_dir=None, interpreter=None, src_dir=None, name=APP_NAME, out
     if codesign(path, out, sign_identity):
         out(f"  signed:      {'ad-hoc' if sign_identity == '-' else sign_identity}")
         if sign_identity == "-":
-            out("  (if the 'access data from other apps' prompt returns on every launch,")
-            out("   sign with a self-signed certificate: --install-app --sign-identity NAME;")
-            out("   see README > Terminal command and app bundle)")
+            out("  requirement: identifier-based (so TCC can persist grants)")
+            out("  verify:      codesign -dr - \"<the .app>\"   ->   designated => identifier ...")
 
     out("")
     out("Next steps:")
@@ -288,13 +293,13 @@ def uninstall_app(app_dir=None, name=APP_NAME, out=print):
     app_dir = os.path.abspath(app_dir or default_app_dir())
     path = bundle_path(app_dir, name)
     if not os.path.exists(path):
-        out(f"No app bundle at {path}")
+        out(f"No app bundle at '{path}'")
         return False
     if not is_our_bundle(path):
-        out(f"Refusing to remove {path}: it is not a bundle written by this tool.")
+        out(f"Refusing to remove '{path}': it is not a bundle written by this tool.")
         return False
     shutil.rmtree(path)
-    out(f"Removed app bundle: {path}")
+    out(f"Removed app bundle: '{path}'")
     out("If it was a Login Item, remove it in System Settings > General > Login Items.")
     return True
 

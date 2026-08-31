@@ -27,10 +27,10 @@ def test_colors_from_state_file():
                     "44444444": "pink", "55555555": "purple", "66666666": "gray"}
         ok = check(all(colors.get(k) == v for k, v in expected.items()),
                    "StickyColor RGB classified into all six palette names",
-                   f"colours: {colors}")
+                   f"colors: {colors}")
         yellow = notes["11111111-AAAA-4AAA-8AAA-111111111111"]
         ok &= check(yellow.color_hex == "#fef49c" and yellow.order == 1,
-                    "hex colour and ZOrder carried through",
+                    "hex color and ZOrder carried through",
                     f"hex={yellow.color_hex} order={yellow.order}")
         return ok
 
@@ -61,7 +61,7 @@ def test_missing_state_file_is_fine():
         ok = check(len(notes) == 7, "notes enumerated without a state file",
                    f"found {len(notes)}")
         ok &= check(all(n.color == "unknown" for n in notes.values()),
-                    "colour falls back to 'unknown'",
+                    "color falls back to 'unknown'",
                     f"{ {n.uuid8: n.color for n in notes.values()} }")
         return ok
 

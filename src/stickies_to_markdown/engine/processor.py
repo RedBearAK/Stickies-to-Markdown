@@ -108,13 +108,13 @@ class NoteProcessor:
     @staticmethod
     def is_excluded(note, target, markdown=None, logger=None):
         """
-        Reactive exclusion for one output: by colour (known before
+        Reactive exclusion for one output: by color (known before
         conversion) or by a regex on the first line (needs the text).
         Returns the reason or "".
         """
         colors = [str(c).lower() for c in (target.get("exclude_colors") or [])]
         if note.color in colors:
-            return f"colour {note.color}"
+            return f"color {note.color}"
         pattern = target.get("exclude_title_regex") or ""
         if pattern and markdown is not None:
             try:
@@ -188,7 +188,7 @@ class NoteProcessor:
         self.notes_known = len(notes)
         for writer in self.writers:
             writer.refresh_index()
-        self.logger.info(f"Export start: {len(notes)} notes in {stickies_dir} "
+        self.logger.info(f"Export start: {len(notes)} notes in '{stickies_dir}' "
                          f"-> {len(self.writers)} output(s)")
         excluded = {w.name: set() for w in self.writers}
         for note in sorted(notes.values(), key=lambda n: n.uuid):

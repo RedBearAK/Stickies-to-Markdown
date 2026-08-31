@@ -22,8 +22,8 @@ from rumps.rumps import NSApplication    # rumps already imported AppKit; reuse 
 from stickies_to_markdown.engine import Config, Engine, EngineError
 
 
-# Full-colour icons rather than macOS "template" images, so the status
-# colour survives: green sticky = watching, grey sticky = stopped, amber
+# Full-color icons rather than macOS "template" images, so the status
+# color survives: green sticky = watching, gray sticky = stopped, amber
 # sticky with "!" = problem. This app's own artwork (icons/make_icons.py),
 # distinct from DFP's dot/square/triangle. AppKit picks @2x on Retina.
 ICON_DIR = os.path.join(os.path.dirname(__file__), "icons")

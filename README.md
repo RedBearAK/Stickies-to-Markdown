@@ -25,9 +25,9 @@ stickies2md --menubar         # macOS menu bar app (pip install '.[menubar]')
 
 Edits in Stickies reach the mirror about 15–20 seconds after you stop
 typing (Stickies autosaves ~10 s after the last change; the watcher adds a
-short debounce and settle). Colour, position and collapse changes rewrite
-the note too and are absorbed as "unchanged" unless the colour changed.
-Everything behavioural here was measured on a real Mac — see
+short debounce and settle). Color, position and collapse changes rewrite
+the note too and are absorbed as "unchanged" unless the color changed.
+Everything behavioral here was measured on a real Mac — see
 `dev_notes/MAC_FINDINGS.md`, whose "Phase 2 watcher rules" section is what
 the watcher implements.
 
@@ -64,11 +64,12 @@ it to System Settings › General › Login Items to start at login. Re-run
 after a venv rebuild; `--uninstall-app` removes it. The identifier must
 never change — TCC grants are keyed to it.
 
-**If that prompt comes back on every launch** (seen with the default ad-hoc
-signature while the Documents grant sticks), sign with a real identity:
-in Keychain Access, Certificate Assistant › Create a Certificate, name it
-e.g. `Stickies2md Signing`, type *Code Signing*; then
-`stickies2md --install-app --sign-identity "Stickies2md Signing"`. The
+**If that prompt comes back on every launch**, TCC is storing the grant
+session-scoped. The default signing now sets an identifier-based designated
+requirement precisely to avoid that (`codesign -dr -` on the bundle should
+show `designated => identifier "com.redbearak.stickies-to-markdown"`; re-run
+`--install-app` if it shows a `cdhash` instead). Should it persist anyway,
+`--install-app --sign-identity NAME` signs with a Keychain certificate; the
 identity is remembered for later re-installs. To see what TCC decided:
 
 ```
@@ -118,18 +119,18 @@ from each plugin's source, not guessed:
 | `colorful-stickynotes` | `colorful-sticky-bg: mint` (green → mint, purple → lavender) | [Colorful StickyNotes](https://github.com/pandanocturne/obsidian-colorful-stickynotes) |
 | `obsidian` | `cssclasses: [stickies-mirror, sticky-yellow]` | any theme, no plugin: the tool installs and enables a CSS snippet in the vault (see below) |
 
-Nothing in the plugin ecosystem tints a note from a colour named in its
+Nothing in the plugin ecosystem tints a note from a color named in its
 own front matter; the `obsidian` flavor is that feature. When an output
 has it, the tool finds the enclosing vault (nearest `.obsidian/` above the
 mirror folder), writes `.obsidian/snippets/stickies-mirror.css` and adds
-it to `enabledCssSnippets` in `appearance.json` — tint per colour, a
+it to `enabledCssSnippets` in `appearance.json` — tint per color, a
 "mirrored from Stickies" banner, and the Properties block hidden on
 mirrored notes only. Obsidian applies it on its next reload (Settings ›
 Appearance › CSS snippets › reload, or restart). The snippet is
 marker-checked like everything else: a file of that name the tool did not
 write is never touched, and the tool's own copy is refreshed when its
 built-in version changes. `obsidian_snippet: false` on the output turns
-this off. The floating-window plugins above colour only their own windows.
+this off. The floating-window plugins above color only their own windows.
 
 ## The folder explains itself
 
@@ -140,7 +141,7 @@ happens on deletion under this output's policy, and where settings live.
 It is maintained like a mirror file (rewritten when the policy changes,
 read-only, marker-checked, removed by `--purge-mirror`) and never indexed
 as a note. `readme_note: false` on the output turns it off.
-Desktop Sticky Notes stores colours in its own settings by file path, so
+Desktop Sticky Notes stores colors in its own settings by file path, so
 no front matter can reach it. One caveat: plugins that *write* front matter
 back into a note (Colorful StickyNotes adds its own id on first open) will
 find the mirror files read-only, which is correct — the sticky is the thing
@@ -243,7 +244,7 @@ into a single block named `default` the first time it is read.
 | `filename_style` | `slug-uuid` | `slug` / `uuid` (see The output format) |
 | `on_delete` | `archive` | `mark` / `delete` / `keep` — see below |
 | `deleted_dir` | `_deleted` | archive folder; relative to the output or absolute |
-| `exclude_colors` | `[]` | colours to keep out of this output |
+| `exclude_colors` | `[]` | colors to keep out of this output |
 | `exclude_title_regex` | *(none)* | first-line pattern to keep out |
 | `on_exclude` | `delete` | policy for a note that becomes excluded |
 | `read_only_output` | `true` | chmod 444 mirror files |
@@ -277,7 +278,7 @@ Exclusion is **reactive**: a note that matches is treated as if it had
 been deleted, per `on_exclude` (default `delete`). That matters for
 timing. Stickies autosaves a new note about ten seconds after you stop
 typing, so a marker typed *after* the content means the note is mirrored
-briefly and then removed - and a sync client may have seen it. Colour is
+briefly and then removed - and a sync client may have seen it. Color is
 the attribute that avoids this: set it on the empty note first, then
 type. Excluded notes are never converted, so their text never leaves the
 Stickies container.

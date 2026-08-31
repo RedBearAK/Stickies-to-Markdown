@@ -2,15 +2,17 @@
 Obsidian-specific extras the writer maintains for an output whose flavor
 includes "obsidian":
 
-- the CSS snippet that styles mirrored notes (tint by colour, banner, hidden
+- the CSS snippet that styles mirrored notes (tint by color, banner, hidden
   Properties block), installed into <vault>/.obsidian/snippets/ and enabled
   in appearance.json; the vault is found by walking up from the output
   folder to the nearest .obsidian directory.
 
 Both are idempotent and marker-checked: a snippet file we did not write is
 never touched, and appearance.json is edited atomically and only when the
-snippet is not yet enabled. Obsidian applies an enabled snippet on its next
-reload (Settings > Appearance > CSS snippets > reload, or restart).
+snippet is not yet enabled - re-checked on every export, because Obsidian
+rewrites appearance.json from memory and can drop an entry it never saw.
+Obsidian applies an enabled snippet on its next reload (Settings >
+Appearance > CSS snippets > the reload button, or restart).
 """
 
 import os
@@ -23,7 +25,7 @@ SNIPPET_MARKER = "/* stickies-to-markdown snippet - managed; edits are overwritt
 CSS_SNIPPET = SNIPPET_MARKER + r"""
 /*
  * Installed by Stickies-to-Markdown for outputs with the "obsidian" flavor,
- * which writes `cssclasses: [stickies-mirror, sticky-<colour>]` into every
+ * which writes `cssclasses: [stickies-mirror, sticky-<color>]` into every
  * mirrored note (and `stickies-deleted` on orphans under the "mark" policy).
  * No plugin involved: cssclasses is a core Obsidian property. To change the
  * look, copy this file under another name and disable this one - this file
@@ -50,7 +52,7 @@ CSS_SNIPPET = SNIPPET_MARKER + r"""
     border-left-color: var(--text-error);
 }
 
-/* ---- colour tint: the sticky's real colour, faintly ------------------ */
+/* ---- color tint: the sticky's real color, faintly ------------------ */
 .sticky-yellow .markdown-preview-view, .sticky-yellow .cm-editor { background-color: rgba(254, 244, 156, 0.18); }
 .sticky-blue   .markdown-preview-view, .sticky-blue   .cm-editor { background-color: rgba(173, 244, 255, 0.18); }
 .sticky-green  .markdown-preview-view, .sticky-green  .cm-editor { background-color: rgba(178, 255, 161, 0.18); }

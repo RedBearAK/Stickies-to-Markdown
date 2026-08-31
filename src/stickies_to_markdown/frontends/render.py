@@ -1,5 +1,5 @@
 """
-Text rendering shared by the CLI and TUI: log-line colouring, event lines,
+Text rendering shared by the CLI and TUI: log-line coloring, event lines,
 status summaries, and a pure-Python log follower (tail -f without tail).
 Carried over from Duplicate-File-Preventer with this tool's vocabulary.
 """
@@ -51,7 +51,7 @@ EVENT_LABELS = {
 def event_line(event, width=None):
     """One-line description of an event, plain text."""
     label = EVENT_LABELS.get(event.kind, event.kind)
-    name = os.path.basename(event.path) if event.path else ""
+    name = f"'{os.path.basename(event.path)}'" if event.path else ""
     parts = [event.time_str(), f"{label:<15}", name, event.detail]
     text = "  ".join(p for p in parts if p)
     if width and len(text) > width:

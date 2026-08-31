@@ -131,7 +131,7 @@ def _check_cocoa(markdown, label):
                f"{label}: body text survives <head> with void <meta> tags",
                f"lost body: {markdown!r}")
     ok &= check('=MID(B2,FIND(" ",B2)+1)' in markdown,
-                "colour spans are transparent", f"{markdown!r}")
+                "color spans are transparent", f"{markdown!r}")
     ok &= check("**Bold line** then *italic* end" in markdown,
                 "b/i and Apple-converted-space handled", f"{markdown!r}")
     ok &= check(lines[0] == "Helpful Excel Functions" and lines[1] == "",

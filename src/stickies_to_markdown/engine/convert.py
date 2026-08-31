@@ -108,7 +108,7 @@ def convert(rtfd_path, converter="auto", logger=None,
             unavailable.append(name)     # tier declined (wrong platform)
         except Exception as error:      # noqa: BLE001 - tiers must fall through
             last_error = error
-            logger.debug(f"Converter {name} failed on {rtfd_path}: {error}")
+            logger.debug(f"Converter {name} failed on '{rtfd_path}': {error}")
     detail = (f"unavailable on this platform: {', '.join(unavailable)}"
               if unavailable and last_error is None
               else f"last error: {last_error}")
@@ -362,7 +362,7 @@ else:
 class _HtmlWalker(HTMLParser):
     """
     Cocoa HTML Writer output -> markdown. Verified shape (2026-08-30):
-    every line is a <p class="pN">; a blank line is <p><br></p>; colour
+    every line is a <p class="pN">; a blank line is <p><br></p>; color
     and kerning are <span class="sN"> (ignored); bold/italic are <b>/<i>;
     lists are <ol class="ol1"><li class="liN">; images are <img src>.
 

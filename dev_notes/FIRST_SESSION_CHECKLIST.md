@@ -13,7 +13,7 @@ with greppable `FINDING:` lines, and never writes inside the container.
 Re-run individual steps with `--steps 3,4`; stage fixture copies with
 `--capture DIR`. The manual notes below remain the reference for
 interpreting what the log reports and for the few judgment calls
-(colour mapping, sanitising fixtures, the no-FDA terminal test).
+(color mapping, sanitising fixtures, the no-FDA terminal test).
 
 The Linux-built Phase 1 rests on documented-but-unverified assumptions
 about the real container (handoff §7). Work through these **in order** on
@@ -56,8 +56,8 @@ plutil -convert xml1 -o /tmp/state.xml .SavedStickiesState && open -e /tmp/state
 
 - [ ] Top-level shape (dict wrapping a list? which key?): ______
 - [ ] Per-note UUID key name: ______
-- [ ] Per-note colour key name and value type (int? string?): ______
-- [ ] Integer→colour mapping, if int (make 6 notes, one per colour,
+- [ ] Per-note color key name and value type (int? string?): ______
+- [ ] Integer→color mapping, if int (make 6 notes, one per color,
       note creation order, read back the values): ______
 
 Then tighten `engine/stickies.py`: replace the candidate-probing in

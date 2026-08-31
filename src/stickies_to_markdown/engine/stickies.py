@@ -12,14 +12,14 @@ Per-note dict keys seen: UUID, StickyColor / ControlColor / HighlightColor /
 SpineColor (each {Red, Green, Blue, Alpha} floats 0..1), Frame, ExpandedSize,
 ExpandFrameY, Floating, Translucent, ZOrder, SpellCheckingTypes.
 
-The colour is a float RGB, not an enum, so it is classified by hue into the
+The color is a float RGB, not an enum, so it is classified by hue into the
 six palette names. All six bands are calibrated against real notes;
 dev_notes/mac_verify.py step 6 prints every note's hue/saturation and the
 assigned name should Apple ever change the palette.
 
 Nothing in this module ever writes inside the container. The state file is
 read defensively: a missing or unparseable one must never block exporting
-the .rtfd contents - colour just falls back to "unknown".
+the .rtfd contents - color just falls back to "unknown".
 """
 
 import os
@@ -40,7 +40,7 @@ _UUID_RE = re.compile(
 COLOR_NAMES = ("yellow", "blue", "green", "pink", "purple", "gray")
 
 # Hue bands in degrees (colorsys hue * 360). Below GRAY_SATURATION the
-# colour is grey regardless of hue. All six calibrated on a real Mac
+# color is gray regardless of hue. All six calibrated on a real Mac
 # (2026-08-30):
 #   yellow #fef49c  54deg    green  #b2ffa1 109deg    blue #adf4ff 188deg
 #   purple #b6caff 224deg    pink   #ffc7c7   0deg    gray #eeeeee sat 0
@@ -121,10 +121,10 @@ def enumerate_notes(stickies_dir, logger=None):
             # Verified 2026-08-30: a brand-new note exists as a FLAT .rtfd
             # file for a few seconds before Stickies replaces it with the
             # package directory on first content save. Not a note yet.
-            logger.info(f"Flat (not yet a package) .rtfd skipped: {name}")
+            logger.info(f"Flat (not yet a package) .rtfd skipped: '{name}'")
             continue
         if not os.path.isfile(os.path.join(rtfd_path, RTF_NAME)):
-            logger.warning(f"Package without {RTF_NAME}, skipped: {name}")
+            logger.warning(f"Package without {RTF_NAME}, skipped: '{name}'")
             continue
         uuid = stem.upper()
         notes[uuid] = Note(uuid, rtfd_path)
@@ -141,7 +141,7 @@ def enumerate_notes(stickies_dir, logger=None):
     return notes
 
 
-# --- colour ----------------------------------------------------------------
+# --- color ----------------------------------------------------------------
 
 def classify_color(red, green, blue):
     """(name, hex) for float RGB 0..1, by saturation then hue band."""
@@ -185,7 +185,7 @@ def read_state(stickies_dir, logger=None):
     except FileNotFoundError:
         return {}
     except (OSError, plistlib.InvalidFileException, ValueError) as error:
-        logger.warning(f"State file unreadable ({error}); colours unknown")
+        logger.warning(f"State file unreadable ({error}); colors unknown")
         return {}
 
     entries = _note_entries(data)

@@ -180,7 +180,7 @@ def _run_once(config, args):
           f"{counters.unchanged} unchanged, {counters.deleted} deleted, "
           f"{counters.errors} errors")
     for target in run_config.targets():
-        print(f"Output ({target.name}): {target.output_dir()}")
+        print(f"Output ({target.name}): '{target.output_dir()}'")
     return 1 if counters.errors else 0
 
 
@@ -200,9 +200,9 @@ def _start(config, args):
         console.print(f"[red]{error}[/red]")
         return 1
     status = engine.status()
-    console.print(f"[green]Watching:[/green] {run_config.stickies_dir()}")
+    console.print(f"[green]Watching:[/green] '{run_config.stickies_dir()}'")
     for target in run_config.targets():
-        console.print(f"[green]Mirror ({target.name}):[/green] {target.output_dir()}")
+        console.print(f"[green]Mirror ({target.name}):[/green] '{target.output_dir()}'")
     if not status.healthy:
         console.print(f"[red]Problem: {status.last_error}[/red]")
     console.print("[dim]Settings edited in the menu apply live. Ctrl-C to stop.[/dim]\n")
@@ -288,12 +288,12 @@ def _apply_sets(config, assignments):
 def _purge_mirror(folder, confirmed):
     from stickies_to_markdown.engine.writer import purge_mirror
     if not os.path.isdir(os.path.expanduser(folder)):
-        print(f"Not a folder: {folder}", file=sys.stderr)
+        print(f"Not a folder: '{folder}'", file=sys.stderr)
         return 2
     removed, kept = purge_mirror(folder, dry_run=not confirmed)
     verb = "Removed" if confirmed else "Would remove"
     for path in removed:
-        print(f"  {verb}: {os.path.relpath(path, os.path.expanduser(folder))}")
+        print(f"  {verb}: '{os.path.relpath(path, os.path.expanduser(folder))}'")
     print(f"{verb} {len(removed)} item(s) written by this tool; {kept} other file(s) untouched.")
     if not confirmed and removed:
         print("Re-run with --yes to delete them.")
@@ -311,7 +311,7 @@ def _edit_outputs(config, additions, removals):
         except ValueError as error:
             print(str(error), file=sys.stderr)
             return 2
-        print(f"Added output {name.strip()!r}: {path.strip()}")
+        print(f"Added output {name.strip()!r}: '{path.strip()}'")
     for name in removals:
         try:
             config.remove_target(name)
@@ -340,14 +340,14 @@ def _show_log(config):
         with open(path, "r", encoding="utf-8", errors="replace") as handle:
             sys.stdout.write(handle.read())
     except FileNotFoundError:
-        print(f"No log yet at {path}")
+        print(f"No log yet at '{path}'")
     return 0
 
 
 def _follow_log(config, poll=0.5):
     """Pure-python tail -f that survives rotation."""
     path = config.get("log_file")
-    print(f"Following {path}  (Ctrl-C to stop)")
+    print(f"Following '{path}'  (Ctrl-C to stop)")
     handle = None
     inode = None
     try:

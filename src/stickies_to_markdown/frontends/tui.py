@@ -159,7 +159,7 @@ class StickiesTUI:
             return
         status = self.refresh_state()
         if status.healthy:
-            self.console.print(f"[green]Watching {self.config.stickies_dir()}[/green]")
+            self.console.print(f"[green]Watching '{self.config.stickies_dir()}'[/green]")
             self.console.print("An initial export of every note runs in the background.")
         else:
             self.console.print(f"[red]Started with a problem: {status.last_error}[/red]")
@@ -256,7 +256,7 @@ class StickiesTUI:
             raise
         except Exception as error:      # noqa: BLE001 - a screen must never blank silently
             self.console.print(f"\n[red]Settings screen failed: {type(error).__name__}: {error}[/red]")
-            self.console.print(f"[dim]{self.config.config_file}[/dim]")
+            self.console.print(f"[dim]'{self.config.config_file}'[/dim]")
             self.pause()
 
     def _settings_loop(self):
@@ -482,7 +482,7 @@ class StickiesTUI:
                 ("3", "Filename style", t.get("filename_style")),
                 ("4", "When a note is deleted (on_delete)", t.on_delete()),
                 ("5", "Archive folder (deleted_dir)", t.get("deleted_dir")),
-                ("6", "Excluded colours", ", ".join(t.get("exclude_colors") or []) or "none"),
+                ("6", "Excluded colors", ", ".join(t.get("exclude_colors") or []) or "none"),
                 ("7", "Excluded title pattern", t.get("exclude_title_regex") or "none"),
                 ("8", "When a note becomes excluded (on_exclude)", t.on_exclude()),
                 ("9", "Read-only mirror files", "yes" if t.get("read_only_output") else "no"),
@@ -555,20 +555,20 @@ class StickiesTUI:
             self.config.set_target(name, "deleted_dir", value.strip())
 
     def _set_o6(self, name):
-        self.console.print(f"[dim]Colours: {', '.join(COLOR_NAMES)}. Empty clears.[/dim]")
-        value = self.ask("Excluded colours (comma-separated)",
+        self.console.print(f"[dim]Colors: {', '.join(COLOR_NAMES)}. Empty clears.[/dim]")
+        value = self.ask("Excluded colors (comma-separated)",
                          default=", ".join(self.config.target(name).get("exclude_colors") or []))
         colors = [c.strip().lower() for c in value.split(",") if c.strip()]
         bad = [c for c in colors if c not in COLOR_NAMES]
         if bad:
-            self.console.print(f"[red]Unknown colour(s): {', '.join(bad)}[/red]")
+            self.console.print(f"[red]Unknown color(s): {', '.join(bad)}[/red]")
             self.pause()
             return
         self.config.set_target(name, "exclude_colors", colors)
 
     def _set_o7(self, name):
         self.console.print("[dim]A regular expression tested against the first line. Empty "
-                           "clears. Tip: exclude by colour instead - it can be chosen before "
+                           "clears. Tip: exclude by color instead - it can be chosen before "
                            "the note autosaves.[/dim]")
         value = self.ask("Excluded title pattern",
                          default=self.config.target(name).get("exclude_title_regex") or "")
@@ -612,7 +612,7 @@ class StickiesTUI:
         for key in sorted(self.config.config):
             table.add_row(key, repr(self.config.config[key]))
         self.console.print(table)
-        self.console.print(f"\n[dim]{self.config.config_file}[/dim]")
+        self.console.print(f"\n[dim]'{self.config.config_file}'[/dim]")
         self.pause()
 
     # --- logs & folders ----------------------------------------------------
@@ -620,7 +620,7 @@ class StickiesTUI:
     def view_log(self):
         path = self.config.get("log_file")
         self.console.clear()
-        self.console.print(f"[bold]Log[/bold] [dim]{path}[/dim]\n")
+        self.console.print(f"[bold]Log[/bold] [dim]'{path}'[/dim]\n")
         lines = tail_lines(path, 60)
         if not lines:
             self.console.print("[dim]No log yet.[/dim]")

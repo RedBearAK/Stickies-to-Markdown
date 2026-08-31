@@ -42,7 +42,7 @@ def test_full_export_and_front_matter():
                         keys.get("color") == "yellow" and
                         keys.get("stickies-uuid", "").startswith("11111111") and
                         keys.get("content-hash", "").startswith("sha256:"),
-                        "marker, colour, uuid and hash in front matter", f"{keys}")
+                        "marker, color, uuid and hash in front matter", f"{keys}")
             ok &= check("Milk and eggs" in body, "body converted", f"{body!r}")
         punct = [f for f in files if f.name == "note--66666666.md"]
         ok &= check(bool(punct), "punctuation-only first line slugs to 'note'",

@@ -20,7 +20,7 @@ Steps:
        type are stamped into the log between filesystem events; inode
        tracking distinguishes in-place rewrite from temp-and-rename
     5  textutil tier-2 output on a real package
-    6  colour calibration: every note's StickyColor as hue/sat + the name
+    6  color calibration: every note's StickyColor as hue/sat + the name
        the engine assigns, for checking the hue bands in stickies.py
     7  converter check: every tier (textutil, pandoc, text) on EVERY
        package; lists which notes carry bold/italic and shows those lines
@@ -78,7 +78,7 @@ class Log:
 def step_1_container(log, args):
     log.section("1. Container path, layout, FDA probe")
     container = args.stickies_dir
-    log.line(f"Probing: {container}")
+    log.line(f"Probing: '{container}'")
     try:
         names = sorted(os.listdir(container))
     except PermissionError:
@@ -104,7 +104,7 @@ def step_1_container(log, args):
     if others:
         log.finding(f"other entries (record these): {others}")
     for name in names[:30]:
-        log.line(f"    {name}")
+        log.line(f"    '{name}'")
     if len(names) > 30:
         log.line(f"    ... and {len(names) - 30} more")
 
@@ -129,10 +129,10 @@ def step_2_anatomy(log, args):
     if pkg is None:
         log.finding("no .rtfd packages found; create a few notes first")
         return
-    log.line(f"Examining: {pkg.name}")
+    log.line(f"Examining: '{pkg.name}'")
     files = sorted(pkg.iterdir())
     for f in files:
-        log.line(f"    {f.name}  ({f.stat().st_size} bytes)")
+        log.line(f"    '{f.name}'  ({f.stat().st_size} bytes)")
     has_rtf = any(f.name == "TXT.rtf" for f in files)
     log.finding(f"TXT.rtf present: {has_rtf}")
     extras = [f.name for f in files
@@ -186,10 +186,10 @@ def step_3_state(log, args):
         return
     for line in _describe(data):
         log.line(line)
-    log.finding("record: top-level shape, per-note UUID key name, colour key "
+    log.finding("record: top-level shape, per-note UUID key name, color key "
                 "name/type - then tighten engine/stickies.py candidates")
-    log.finding("colour mapping: make 6 notes, one per colour, in a known "
-                "order; re-run this step; match values to colours")
+    log.finding("color mapping: make 6 notes, one per color, in a known "
+                "order; re-run this step; match values to colors")
 
 
 # --- step 4 ----------------------------------------------------------------
@@ -262,24 +262,24 @@ def step_4_watch(log, args):
             after = _tree_state(container)
             for path in after.keys() - before.keys():
                 kind = "DIR " if after[path][3] else "FILE"
-                log.line(f"  {stamp()}  CREATED {kind} {os.path.relpath(path, container)}")
+                log.line(f"  {stamp()}  CREATED {kind} '{os.path.relpath(path, container)}'")
                 seen += 1
             for path in before.keys() - after.keys():
                 kind = "DIR " if before[path][3] else "FILE"
-                log.line(f"  {stamp()}  DELETED {kind} {os.path.relpath(path, container)}")
+                log.line(f"  {stamp()}  DELETED {kind} '{os.path.relpath(path, container)}'")
                 seen += 1
             for path in after.keys() & before.keys():
                 if before[path][:3] != after[path][:3]:
                     rel = os.path.relpath(path, container)
                     if before[path][3] != after[path][3]:
-                        log.line(f"  {stamp()}  BECAME {'DIR' if after[path][3] else 'FILE'} {rel}")
+                        log.line(f"  {stamp()}  BECAME {'DIR' if after[path][3] else 'FILE'} '{rel}'")
                     elif after[path][3]:
-                        log.line(f"  {stamp()}  DIR-TOUCH {rel}")
+                        log.line(f"  {stamp()}  DIR-TOUCH '{rel}'")
                     else:
                         same = before[path][0] == after[path][0]
                         how = ("IN-PLACE (same inode)" if same
                                else "REPLACED (new inode = temp-and-rename)")
-                        log.line(f"  {stamp()}  CHANGED  {rel}  {how}")
+                        log.line(f"  {stamp()}  CHANGED  '{rel}'  {how}")
                     seen += 1
             before = after
     except KeyboardInterrupt:
@@ -313,7 +313,7 @@ def step_5_textutil(log, args):
         return
     proc = subprocess.run([TEXTUTIL, "-convert", "html", "-stdout", str(pkg)],
                           capture_output=True, timeout=30)
-    log.finding(f"textutil rc={proc.returncode} on {pkg.name}")
+    log.finding(f"textutil rc={proc.returncode} on '{pkg.name}'")
     if proc.returncode == 0:
         text = proc.stdout.decode("utf-8", errors="replace")
         for line in text.splitlines()[:50]:
@@ -327,7 +327,7 @@ def step_5_textutil(log, args):
 # --- step 6 ----------------------------------------------------------------
 
 def step_6_colors(log, args):
-    log.section("6. Colour calibration (StickyColor -> palette name)")
+    log.section("6. Color calibration (StickyColor -> palette name)")
     src = Path(__file__).resolve().parent.parent / "src"
     if src.is_dir() and str(src) not in sys.path:
         sys.path.insert(0, str(src))
@@ -366,7 +366,7 @@ def step_6_colors(log, args):
     ambiguous = {k: v for k, v in seen.items() if len(v) > 1}
     if ambiguous:
         log.finding(f"one name covers several hex values - fine if they are "
-                    f"the same colour, suspicious otherwise: {ambiguous}")
+                    f"the same color, suspicious otherwise: {ambiguous}")
 
 
 # --- step 7 ----------------------------------------------------------------
@@ -419,7 +419,7 @@ def step_7_converters(log, args):
         log.finding(f"conversion failed: {line}")
     if styled:
         for uuid8, runs, markdown in styled:
-            log.line(f"\n  --- {uuid8}: {len(runs)} emphasised run(s) via textutil ---")
+            log.line(f"\n  --- {uuid8}: {len(runs)} emphasized run(s) via textutil ---")
             for line in markdown.splitlines():
                 if emphasis.search(line):
                     log.line(f"    {line[:110]}")
@@ -448,10 +448,10 @@ def step_8_capture(log, args):
     for pkg in packages:
         target = dest / pkg.name
         if target.exists():
-            log.line(f"    exists, skipped: {pkg.name}")
+            log.line(f"    exists, skipped: '{pkg.name}'")
             continue
         shutil.copytree(pkg, target)
-        log.line(f"    copied: {pkg.name}")
+        log.line(f"    copied: '{pkg.name}'")
     state = Path(args.stickies_dir) / ".SavedStickiesState"
     if state.is_file() and not (dest / state.name).exists():
         shutil.copy2(state, dest / state.name)

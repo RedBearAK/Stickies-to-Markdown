@@ -4,11 +4,11 @@ Generate every icon this app ships, with Pillow only:
 
     AppIcon.icns              Finder/Spotlight/Dock icon for the .app bundle
     watching.png (+@2x)       menu bar: green sticky        = watching
-    stopped.png  (+@2x)       menu bar: grey sticky         = stopped
+    stopped.png  (+@2x)       menu bar: gray sticky         = stopped
     problem.png  (+@2x)       menu bar: amber sticky + "!"  = problem
 
-The menu bar icons are full-colour PNGs, not macOS template images, so the
-status colour survives. They are this app's own artwork - a sticky-note
+The menu bar icons are full-color PNGs, not macOS template images, so the
+status color survives. They are this app's own artwork - a sticky-note
 silhouette - and deliberately unlike Duplicate-File-Preventer's dot /
 square / triangle set. Re-run after editing; commit the results:
 
@@ -26,7 +26,7 @@ INK = (60, 60, 60)
 
 STATUS = {
     "watching": ((110, 200, 120), (70, 150, 85)),     # green
-    "stopped": ((170, 170, 170), (120, 120, 120)),    # grey
+    "stopped": ((170, 170, 170), (120, 120, 120)),    # gray
     "problem": ((245, 180, 60), (200, 135, 30)),      # amber
 }
 

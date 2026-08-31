@@ -2,7 +2,7 @@
 
 Source: `stickies_verify_20260830-140919.log`, `-142131.log`, `-143623.log`,
 `-144310.log`, `-144917.log`, `-150158.log` (typing test), `-151147.log`
-(colours), `-151320.log`, `-152249.log` (all-package converter check);
+(colors), `-151320.log`, `-152249.log` (all-package converter check);
 macOS with Python 3.12.13, VS Code terminal. Each item below replaces an
 assumption in the handoff §4 or in Phase 1 code.
 
@@ -24,12 +24,18 @@ assumption in the handoff §4 or in Phase 1 code.
 
 - **Observed with the menu bar app (2026-08-30):** the "access data from
   other apps" prompt reappears on EVERY launch of the ad-hoc-signed bundle,
-  while the Documents grant from the same bundle persists. Hypothesis: that
-  service persists against the designated requirement and an ad-hoc
-  signature has none it will keep. Mitigation shipped: `--install-app
-  --sign-identity NAME` with a self-signed Code Signing certificate.
-  Unverified until tried; the TCC log predicate in the README shows the
-  decision either way.
+  while the Documents grant from the same bundle persists. The TCC log
+  explains it: attribution is correct (responsible = the bundle), the grant
+  is created with `identifier_type=Bundle ID`, but each launch logs
+  `Session scoped auth is invalid for client` followed by a new `Create` -
+  i.e. tccd stores the AppData grant **session-scoped**, not persistently.
+  `codesign -dr -` on the bundle shows why: the ad-hoc designated
+  requirement is a bare `cdhash H"..."`. Fix shipped: ad-hoc signing now
+  sets an explicit `designated => identifier "com.redbearak.stickies-to-markdown"`
+  requirement. If tccd still session-scopes it, the next step is a signing
+  certificate (`--sign-identity`), which the tool could create itself.
+- `TCC.db` cannot be read even with sudo on this macOS (authorization
+  denied); the unified log is the only view into decisions.
 
 ## Container and packages
 
@@ -50,8 +56,8 @@ assumption in the handoff §4 or in Phase 1 code.
   `SpineColor` (each `{Red, Green, Blue, Alpha}` floats 0..1), `Frame`,
   `ExpandedSize`, `ExpandFrameY`, `Floating`, `Translucent`, `ZOrder`,
   `SpellCheckingTypes`.
-- Colour is therefore a float RGB, **not** an enum. `stickies.py` now
-  classifies `StickyColor` by saturation (grey) then hue band into the six
+- Color is therefore a float RGB, **not** an enum. `stickies.py` now
+  classifies `StickyColor` by saturation (gray) then hue band into the six
   palette names, and also exposes the exact hex (`color-hex` in front
   matter). One calibration point so far: yellow = `#fef49c`, hue 54°.
 - Order comes from `ZOrder`.
@@ -67,7 +73,7 @@ appears and vanishes without ever becoming a package. 16 notes created in
 6 s later.
 
 **Attribute changes save the package.** One note was replaced at +0, +9,
-+27, +35 s during continuous fiddling with its colour, position,
++27, +35 s during continuous fiddling with its color, position,
 collapsed/expanded state and focus - no typing. So recolouring, moving
 and collapsing all rewrite `TXT.rtf` (content unchanged) within seconds,
 not just the state file. Every save is `TXT.rtf` **replaced** (new
@@ -114,7 +120,7 @@ also rewrite the package, it carries no signal the package does not.
    delete-then-create gap was 0.5 s), `debounce_seconds = 3` (saves are
    8+ s apart; an edit reaches the mirror ~10-15 s after the keystroke).
 4. **State file: never a trigger.** Re-read it (cheap, tolerant) as part
-   of handling a package event, so the colour written with that note is
+   of handling a package event, so the color written with that note is
    current. A recolour rewrites the package anyway (verified), so no
    separate state-file watch is needed. Never derive existence from it;
    stale deleted entries persist until quit.
@@ -122,7 +128,7 @@ also rewrite the package, it carries no signal the package does not.
    produce sixteen concurrent conversions; a single worker draining a
    per-uuid pending set, oldest first, is enough.
 
-## Colour calibration (6 of 6)
+## Color calibration (6 of 6)
 
     yellow  #fef49c  hue  54  sat 0.39
     green   #b2ffa1  hue 109  sat 0.37
@@ -132,7 +138,7 @@ also rewrite the package, it carries no signal the package does not.
     gray    #eeeeee  sat 0.00
 
 Blue and purple are only 36 degrees apart; the band boundary is at 206.
-(Assumes note 45bdae71 in the colour log was the purple one - it appeared
+(Assumes note 45bdae71 in the color log was the purple one - it appeared
 when a purple was requested.) The state file also carries `ControlColor`,
 `HighlightColor`, `SpineColor` (darker variants of the same hue) - unused.
 
@@ -140,7 +146,7 @@ when a purple was requested.) The state file also carries `ControlColor`,
 
 - **textutil works** on real packages (rc=0). Output shape (Cocoa HTML
   Writer): every line is `<p class="pN">`, blank lines are `<p><br></p>`,
-  colours/kerning are `<span class="sN">`, `<span class="Apple-converted-space">`
+  colors/kerning are `<span class="sN">`, `<span class="Apple-converted-space">`
   carries inter-word spaces, `ol.ol1`/`li.liN` for lists. The walker was
   rewritten for this shape; two bugs fixed (void `<meta>` tags poisoned the
   skip counter and discarded the whole body; `<p>` was treated as a
@@ -191,7 +197,7 @@ when a purple was requested.) The state file also carries `ControlColor`,
 - [x] **Write mechanics** (replace, not rewrite; attribute changes save the
       package; close = delete) - settled.
 - [x] **Typing autosave interval** - ~10-12 s idle debounce (one run).
-- [x] **Colour calibration** - all six.
+- [x] **Color calibration** - all six.
 - [x] **Bold/italic through textutil** - verified.
 - [ ] **TCC service name** for `tccutil reset` (see Permissions).
 - [ ] **Real fixtures** (step 8 with `--capture`, then sanitise).

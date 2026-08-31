@@ -18,7 +18,7 @@ Rules derived from observing Stickies (dev_notes/MAC_FINDINGS.md):
    deletion.
 2. Any event under <uuid>.rtfd/ (or on the directory itself) is that
    note's change signal; TXT.rtf is replaced, never rewritten in place, so
-   on_modified is not relied on. Attribute changes (colour, position)
+   on_modified is not relied on. Attribute changes (color, position)
    rewrite the package too, so many events end as "unchanged" - counted,
    not suppressed.
 3. settle 1 s / debounce 3 s fit the observed 0.5 s mid-save gap and
@@ -126,8 +126,8 @@ class Engine:
                 self._ensure_logging()
                 self.logger.info("=" * 60)
                 self.logger.info(f"Stickies-to-Markdown watcher starting - PID {os.getpid()}")
-                self.logger.info(f"Config: {self.config.config_file}")
-                self.logger.info(f"Outputs: {', '.join(self.config.output_dirs()) or 'NONE'}")
+                self.logger.info(f"Config: '{self.config.config_file}'")
+                self.logger.info("Outputs: " + (", ".join(f"'{d}'" for d in self.config.output_dirs()) or "NONE"))
                 self.logger.info(f"Dry run: {'ON' if self.config.get('dry_run') else 'off'}")
 
                 self._last_error = None
@@ -182,11 +182,11 @@ class Engine:
             try:
                 self._observer.schedule(_Handler(self), directory, recursive=True)
                 self._watched_dir = directory
-                self.logger.info(f"Watching: {directory}")
+                self.logger.info(f"Watching: '{directory}'")
             except OSError as error:
                 self._set_error(f"cannot watch {directory}: {error}")
         else:
-            self.logger.warning(f"Not watching {directory}: container unreadable or missing")
+            self.logger.warning(f"Not watching '{directory}': container unreadable or missing")
         self._observer.start()
 
     def _stop_observer(self):
