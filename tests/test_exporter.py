@@ -315,6 +315,59 @@ def test_subfolder_blank_writes_directly():
                      "subfolder '' writes straight into the folder", "")
 
 
+def test_slug_style_collision_and_rename():
+    with Sandbox(filename_style="slug") as box:
+        _export(box)
+        names = sorted(f.name for f in box.mirror_files())
+        suffixed = [n for n in names if "--" in n]
+        ok = check("grocery-list.md" in names and "note.md" in names
+                   and suffixed == ["note--66666666.md"],
+                   "slug style: plain names; the one real collision (two 'note' slugs) suffixed",
+                   f"{names}")
+        # a second note with the same first line -> only the newcomer gets the suffix
+        pkg = box.container / "ABCDEF02-0000-4000-8000-000000000000.rtfd"
+        pkg.mkdir()
+        (pkg / "TXT.rtf").write_bytes(
+            (box.container / "11111111-AAAA-4AAA-8AAA-111111111111.rtfd" / "TXT.rtf").read_bytes())
+        _export(box)
+        names = sorted(f.name for f in box.mirror_files())
+        ok &= check("grocery-list.md" in names and "grocery-list--abcdef02.md" in names,
+                    "collision: existing keeps the plain name, newcomer gets uuid8", f"{names}")
+        before = box.tree_signature(box.output)
+        _export(box)
+        ok &= check(before == box.tree_signature(box.output), "stable across re-runs", "churn")
+        return ok
+
+
+def test_machine_identity_isolates_shared_folders():
+    """Two Macs mirroring into one folder: neither touches the other's files."""
+    with Sandbox(machine_label="mac-a") as box:
+        _export(box)
+        keys, _ = split_front_matter((box.output / "grocery-list--11111111.md").read_text(encoding="utf-8"))
+        ok = check(keys.get("source-machine") == "mac-a", "source-machine written", f"{keys}")
+        # Now "mac-b" runs against a container that lacks all of mac-a's notes.
+        import shutil
+        for pkg in box.note_dirs():
+            shutil.rmtree(pkg)
+        pkg = box.container / "BBBBBBBB-0000-4000-8000-000000000000.rtfd"
+        pkg.mkdir()
+        (pkg / "TXT.rtf").write_bytes(
+            rb"{\rtf1\ansi{\fonttbl\f0\fswiss Helvetica;}\f0 Mac B note\par}")
+        box.config.set("machine_label", "mac-b")
+        counters = _export(box)
+        names = sorted(f.name for f in box.mirror_files())
+        ok &= check(len(names) == 8 and "mac-b-note--bbbbbbbb.md" in names
+                    and counters.deleted == 0 and not (box.output / "_deleted").exists(),
+                    "mac-b left mac-a's 7 files alone and added its own", f"{names} {counters.as_dict()}")
+        return ok
+
+
+def test_machine_placeholder_in_subfolder():
+    with Sandbox(machine_label="studio", subfolder="Stickies/{machine}") as box:
+        return check(box.target.output_dir() == str(box.output / "Stickies" / "studio"),
+                     "{machine} expands in the subfolder", box.target.output_dir())
+
+
 def test_custom_deleted_dir_and_collision():
     with Sandbox(deleted_dir="Deleted_Stickies") as box:
         _export(box)
@@ -454,6 +507,8 @@ if __name__ == "__main__":
              test_code_block_note_front_matter_and_slug,
              test_two_outputs_with_different_settings, test_legacy_flat_config_migrates,
              test_plugin_flavors_from_source, test_subfolder_blank_writes_directly,
+             test_slug_style_collision_and_rename, test_machine_identity_isolates_shared_folders,
+             test_machine_placeholder_in_subfolder,
              test_custom_deleted_dir_and_collision, test_exclusion_by_color_is_reactive,
              test_exclusion_by_title_regex_with_archive, test_attachments_follow_the_file,
              test_container_never_touched,

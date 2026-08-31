@@ -105,19 +105,30 @@ from each plugin's source, not guessed:
 | `floating-sticky-notes` | nothing — the generic `color:` key and its values are exactly what it reads | [Floating Sticky Notes](https://github.com/kasairo/floating-sticky-notes) (kasairo) |
 | `sticky-notes` | `background_color: Yellow` (capitalised; gray → `Base`) | [Sticky Notes](https://github.com/Abdo-reda/obsidian-sticky-notes-plugin) (abdo-reda) and its fork Simple Sticky Notes |
 | `colorful-stickynotes` | `colorful-sticky-bg: mint` (green → mint, purple → lavender) | [Colorful StickyNotes](https://github.com/pandanocturne/obsidian-colorful-stickynotes) |
-| `obsidian` | `cssclasses: [stickies-mirror, sticky-yellow]` | any theme, via the CSS snippet in `extras/obsidian/` — no plugin |
+| `obsidian` | `cssclasses: [stickies-mirror, sticky-yellow]` | any theme, via the CSS snippet in `extras/obsidian/` — no plugin; the snippet also hides the Properties block on mirrored notes only |
 
-Colorful Note Borders / Colorful Note Background match on any
-`key: value`, so a rule on `color: yellow` works with no flavor at all.
+To colour the note itself in the main editor (not a floating window),
+Colorful Note Background tints the body and Colorful Note Borders draws a
+border; both are rule-based on any `key: value`, so six rules on
+`color: yellow`, `color: blue`, ... work with no flavor at all. The
+floating-window plugins above colour only their own windows.
 Desktop Sticky Notes stores colours in its own settings by file path, so
 no front matter can reach it. One caveat: plugins that *write* front matter
 back into a note (Colorful StickyNotes adds its own id on first open) will
 find the mirror files read-only, which is correct — the sticky is the thing
 to edit — but expect a complaint from the plugin the first time.
 
-Files are named `<slug-of-first-line>--<uuid8>.md` (or `<uuid8>.md` with
-`filename_style=uuid`). Attachments are copied to `attachments/<uuid8>/` and
-linked from the body.
+Files are named from the note's first line (Stickies has no titles).
+`filename_style` chooses: `slug` — first line only, a uuid8 suffix added
+just when two notes share a first line; `slug-uuid` (default) — always
+suffixed, so a retitled note is trivially tracked; `uuid` — the uuid8 alone.
+Attachments are copied to `attachments/<uuid8>/` and linked from the body.
+
+Every file also records `source-machine`. Stickies do not sync between
+Macs, so two Macs mirroring into one shared folder would otherwise each
+see the other's files as vanished notes; a writer only ever manages files
+from its own machine, and `{machine}` in an output's `subfolder` keeps
+them in separate folders (`Synced_from_Stickies/{machine}`).
 
 ## Safety rules
 
@@ -190,6 +201,7 @@ into a single block named `default` the first time it is read.
 | `debounce_seconds` / `settle_seconds` | `3.0` / `1.0` | watcher timing, calibrated to Stickies' autosave |
 | `code_block_min_escapes` / `code_block_density` | `6` / `4.0` | when a note becomes a fenced code block (see below) |
 | `dry_run` | `false` | log and report, write nothing |
+| `machine_label` | *(hostname)* | this Mac's name in `source-machine` and `{machine}` |
 
 | output key | default | meaning |
 | --- | --- | --- |
@@ -197,7 +209,7 @@ into a single block named `default` the first time it is read.
 | `output_dir` | — | the folder the mirror is created inside |
 | `subfolder` | `Synced_from_Stickies` | mirror folder name inside `output_dir`; blank = none |
 | `flavor` | `generic` | one or more flavors, comma-separated (see The output format) |
-| `filename_style` | `slug-uuid` | or `uuid` |
+| `filename_style` | `slug-uuid` | `slug` / `uuid` (see The output format) |
 | `on_delete` | `archive` | `mark` / `delete` / `keep` — see below |
 | `deleted_dir` | `_deleted` | archive folder; relative to the output or absolute |
 | `exclude_colors` | `[]` | colours to keep out of this output |

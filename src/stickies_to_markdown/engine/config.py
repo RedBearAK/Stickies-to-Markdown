@@ -28,6 +28,7 @@ output_dir at the top level is migrated into a single "default" block.
 import os
 import copy
 import json
+import socket
 import platform
 import tempfile
 
@@ -39,7 +40,10 @@ LOG_FILENAME = "stickies_to_markdown.log"
 DEFAULT_STICKIES_DIR = (
     "~/Library/Containers/com.apple.Stickies/Data/Library/Stickies")
 
-FILENAME_STYLES = ("slug-uuid", "uuid")
+# slug        first line only; a uuid8 suffix is added ONLY on a collision
+# slug-uuid   first line + uuid8, always (stable, unique, ugly as a title)
+# uuid        uuid8 only
+FILENAME_STYLES = ("slug", "slug-uuid", "uuid")
 # What happens to a mirror file when its note is deleted in Stickies:
 #   archive  move it to deleted_dir, annotated with deleted-from-stickies
 #   mark     leave it in place, annotated with deleted-from-stickies
@@ -61,7 +65,8 @@ TARGET_DEFAULTS = {
     "output_dir": "",
     # The mirror lives in output_dir/<subfolder>, created on first export,
     # so pointing an output at a vault or Documents never spills files into
-    # it. "" writes directly into output_dir.
+    # it. "" writes directly into output_dir. "{machine}" expands to this
+    # Mac's label, for two Macs mirroring into one shared folder.
     "subfolder": DEFAULT_SUBFOLDER,
     "flavor": "generic",                    # one or more of FLAVOR_CHOICES, comma-separated
     "filename_style": "slug-uuid",          # or "uuid"
@@ -95,13 +100,20 @@ def default_config_dir():
     return os.path.join(xdg_config, 'stickies-to-markdown')
 
 
+def default_machine_label():
+    """Short hostname, lowercased: what a user would call this Mac."""
+    name = socket.gethostname().split(".")[0].strip().lower()
+    return name or "unknown"
+
+
 class OutputTarget:
     """A read-only view of one output block with the resolved accessors the
     writer needs. Edits go through Config.set_target()."""
 
-    def __init__(self, data):
+    def __init__(self, data, machine_label=None):
         self.data = dict(TARGET_DEFAULTS)
         self.data.update(data or {})
+        self.machine_label = machine_label or default_machine_label()
 
     def get(self, key, default=None):
         return self.data.get(key, default)
@@ -117,7 +129,8 @@ class OutputTarget:
 
     def subfolder(self):
         value = self.data.get("subfolder")
-        return DEFAULT_SUBFOLDER if value is None else str(value).strip().strip("/")
+        value = DEFAULT_SUBFOLDER if value is None else str(value).strip().strip("/")
+        return value.replace("{machine}", self.machine_label)
 
     def output_dir(self):
         """Where files actually go: base/subfolder - unless the subfolder is
@@ -182,6 +195,11 @@ class Config:
             "log_max_size": 10,                     # MB
             "log_backup_count": 5,
             "dry_run": False,
+            # This Mac's label: written as `source-machine` in every mirror
+            # file, and available as {machine} in an output's subfolder.
+            # Stickies do not sync between Macs, so two Macs sharing one
+            # mirror folder must be told apart. "" = the short hostname.
+            "machine_label": "",
             # --- outputs: one block per mirror folder (TARGET_DEFAULTS) ---
             "outputs": [],
         }
@@ -274,11 +292,16 @@ class Config:
     def stickies_dir(self):
         return os.path.expanduser(self.get("stickies_dir") or DEFAULT_STICKIES_DIR)
 
+    def machine_label(self):
+        return (str(self.get("machine_label") or "").strip().lower()
+                or default_machine_label())
+
     # --- outputs -----------------------------------------------------------
 
     def targets(self):
         """Every configured output block, as OutputTarget objects."""
-        return [OutputTarget(block) for block in self.get("outputs") or []
+        label = self.machine_label()
+        return [OutputTarget(block, label) for block in self.get("outputs") or []
                 if isinstance(block, dict)]
 
     def target(self, name):

@@ -13,6 +13,12 @@
  * plugin, since the mirror files are read-only on disk anyway.
  */
 
+/* ---- hide the Properties block on mirrored notes only ---------------- */
+/* (Settings > Editor > "Properties in document" hides it for ALL notes;
+   this keeps it visible elsewhere and hidden where it is just plumbing.) */
+
+.stickies-mirror .metadata-container { display: none; }
+
 /* ---- banner: this note is a mirror ---------------------------------- */
 
 .stickies-mirror .markdown-preview-view::before,

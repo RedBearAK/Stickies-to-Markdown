@@ -40,6 +40,7 @@ from stickies_to_markdown.engine.logsetup import get_logger
 
 MARKER_KEY = "synced-by"
 MARKER_VALUE = "stickies-to-markdown"
+MACHINE_KEY = "source-machine"
 DELETED_KEY = "deleted-from-stickies"
 ATTACHMENTS_DIR = "attachments"
 CONFLICTS_DIR = "_conflicts"
@@ -125,10 +126,21 @@ def first_line_of(markdown):
     line = first_content_line(markdown)
     return line.lstrip("#").strip() or line
 
-def filename_for(note, markdown, style):
+def filename_for(note, markdown, style, taken=None):
+    """
+    Mirror filename for a note. `taken` maps existing filenames to the uuid
+    that owns them; the "slug" style consults it so two notes with the
+    same first line never fight over one file.
+    """
     if style == "uuid":
         return f"{note.uuid8}.md"
-    return f"{slugify(first_line_of(markdown) or 'note')}--{note.uuid8}.md"
+    slug = slugify(first_line_of(markdown) or "note")
+    if style == "slug":
+        plain = f"{slug}.md"
+        owner = (taken or {}).get(plain)
+        if owner is None or owner == note.uuid:
+            return plain
+    return f"{slug}--{note.uuid8}.md"
 
 
 # --- hashing ---------------------------------------------------------------
@@ -196,7 +208,8 @@ class Writer:
         self._body_format = body_format
         os.makedirs(self.output_dir, exist_ok=True)
         markdown = self._resolve_attachment_links(note, markdown, attachments)
-        target_name = filename_for(note, markdown, self.target.get("filename_style"))
+        taken = {name: uuid for uuid, name in self._index().items()}
+        target_name = filename_for(note, markdown, self.target.get("filename_style"), taken)
         target_path = os.path.join(self.output_dir, target_name)
 
         previous_name = self._index().get(note.uuid)
@@ -270,6 +283,7 @@ class Writer:
                 getattr(dir_stat, "st_birthtime", None) or (dir_stat and dir_stat.st_mtime))
             keys = {
                 MARKER_KEY: MARKER_VALUE,
+                MACHINE_KEY: self.config.machine_label(),
                 "stickies-uuid": note.uuid,
                 "color": note.color,
                 "color-hex": note.color_hex or "",
@@ -297,6 +311,12 @@ class Writer:
         keys, _body = split_front_matter(text)
         if keys.get(MARKER_KEY) != MARKER_VALUE:
             message = "exists but was not written by this tool; skipped"
+            self.logger.error(f"{path}: {message}")
+            self.events.put(Event("error", path, message))
+            return None
+        other = keys.get(MACHINE_KEY)
+        if other and other != self.config.machine_label():
+            message = f"belongs to another machine ({other}); skipped - use a per-machine subfolder"
             self.logger.error(f"{path}: {message}")
             self.events.put(Event("error", path, message))
             return None
@@ -462,8 +482,14 @@ class Writer:
             except OSError:
                 continue
             keys, _ = split_front_matter(head)
-            if keys.get(MARKER_KEY) == MARKER_VALUE and keys.get("stickies-uuid"):
-                index[keys["stickies-uuid"].strip('"')] = name
+            if keys.get(MARKER_KEY) != MARKER_VALUE or not keys.get("stickies-uuid"):
+                continue
+            # Another Mac's mirror files in a shared folder are not ours to
+            # rename, archive or delete: they belong to notes we cannot see.
+            other = keys.get(MACHINE_KEY)
+            if other and other != self.config.machine_label():
+                continue
+            index[keys["stickies-uuid"].strip('"')] = name
         self._mirror_index = index
         return index
 

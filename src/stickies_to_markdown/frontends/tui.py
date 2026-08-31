@@ -280,6 +280,8 @@ class StickiesTUI:
                  f"{c.get('code_block_min_escapes')} / {c.get('code_block_density')}"),
                 ("5", "Dry run", "[cyan]ON[/cyan]" if c.get("dry_run") else "off"),
                 ("6", "Log level", c.get("log_level")),
+                ("7", "This machine's label", f"{c.machine_label()}"
+                 + ("  [dim](hostname)[/dim]" if not c.get("machine_label") else "")),
             ]
             self.console.print("[bold cyan]Global[/bold cyan]")
             table = Table(show_header=False, box=None, padding=(0, 2))
@@ -364,6 +366,12 @@ class StickiesTUI:
 
     def _set_g6(self):
         self._set_choice("log_level", ("DEBUG", "INFO", "WARNING", "ERROR"), "Log level")
+
+    def _set_g7(self):
+        self.console.print("[dim]Written as source-machine in every mirror file and usable as "
+                           "{machine} in an output's subfolder. Empty = this Mac's hostname.[/dim]")
+        value = self.ask("Machine label", default=self.config.get("machine_label") or "")
+        self.config.set("machine_label", value.strip().lower())
 
     # --- outputs -----------------------------------------------------------
 
@@ -491,7 +499,8 @@ class StickiesTUI:
                 return
             if choice == "13":
                 self.console.print("[dim]The mirror is created inside the folder under this name, "
-                                   "so nothing spills into a vault root. Enter '-' for none.[/dim]")
+                                   "so nothing spills into a vault root. Enter '-' for none; "
+                                   "{machine} expands to this Mac's label.[/dim]")
                 value = self.ask("Subfolder", default=t.subfolder() or "-").strip()
                 self.config.set_target(name, "subfolder", "" if value in ("-", "") else value)
                 continue
