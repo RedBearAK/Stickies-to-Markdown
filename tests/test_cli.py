@@ -4,7 +4,7 @@
 import io
 import contextlib
 
-from _helpers import Sandbox, check, run_suite
+from _helpers import Sandbox, check, run_suite, notes_in
 
 from stickies_to_markdown.frontends.cli import run_cli
 
@@ -43,7 +43,7 @@ def test_per_run_override_not_saved():
         other = box.root / "elsewhere"
         code, _out, _err = _run(box, "--once", "--output-dir", str(other),
                                 "--filename-style", "uuid")
-        ok = check(code == 0 and len(list((other / "Synced_from_Stickies").glob("*.md"))) == 7,
+        ok = check(code == 0 and len(notes_in(other / "Synced_from_Stickies")) == 7,
                    "--output-dir override honoured (with the default subfolder)", f"rc={code}")
         box.config.reload()
         ok &= check(box.config.output_dirs() == [str(box.output)],
@@ -157,9 +157,12 @@ def test_purge_mirror_removes_only_ours():
         foreign = box.output / "my-own-note.md"
         foreign.write_text("mine\n", encoding="utf-8")
         code, out, _ = _run(box, "--purge-mirror", str(box.output))
-        ok = check(code == 0 and "Would remove 10" in out or "Would remove 8" in out,
-                   "dry run lists what it would remove", out[-200:])
-        ok &= check(len(box.mirror_files()) == 8, "dry run removed nothing", "")
+        import re
+        m = re.search(r"Would remove (\d+) item", out)
+        ok = check(code == 0 and m and int(m.group(1)) == 9,      # 7 notes + readme + 1 attachments dir
+                   "dry run lists what it would remove", out[-300:])
+        ok &= check(len(box.mirror_files()) == 8 and (box.output / "_About these notes (read-only mirror).md").exists(),
+                    "dry run removed nothing", "")
         code, out, _ = _run(box, "--purge-mirror", str(box.output), "--yes")
         ok &= check(code == 0 and foreign.is_file()
                     and not any(f.name != "my-own-note.md" for f in box.mirror_files())

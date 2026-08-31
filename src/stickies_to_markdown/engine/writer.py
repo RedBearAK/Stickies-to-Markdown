@@ -35,6 +35,8 @@ import tempfile
 from stickies_to_markdown.engine.events import Event
 from stickies_to_markdown.engine.emitters import flavor_keys, deleted_keys
 from stickies_to_markdown.engine.convert import first_content_line
+from stickies_to_markdown.engine import obsidian
+from stickies_to_markdown.engine.emitters import parse_flavors
 from stickies_to_markdown.engine.logsetup import get_logger
 
 
@@ -43,6 +45,8 @@ MARKER_VALUE = "stickies-to-markdown"
 MACHINE_KEY = "source-machine"
 MACHINE_ID_KEY = "source-machine-id"
 DELETED_KEY = "deleted-from-stickies"
+README_KEY = "mirror-readme"
+README_NAME = "_About these notes (read-only mirror).md"
 ATTACHMENTS_DIR = "attachments"
 CONFLICTS_DIR = "_conflicts"
 
@@ -243,6 +247,79 @@ class Writer:
         self.events.put(Event("conflict" if conflicted else kind,
                               target_path, detail))
         return "converted" if conflicted else kind
+
+    def maintain_extras(self):
+        """
+        The self-describing note at the top of the folder, and (obsidian
+        flavor) the vault CSS snippet. Idempotent; called once per full
+        export. Returns a list of actions taken.
+        """
+        actions = []
+        if self.target.get("readme_note", True):
+            actions += self._write_readme()
+        if self.target.get("obsidian_snippet", True) and \
+                "obsidian" in parse_flavors(self.target.get("flavor", "generic")):
+            vault = obsidian.find_vault_root(self.output_dir)
+            if vault:
+                taken = obsidian.install_snippet(vault, dry_run=self.dry_run)
+                for action in taken:
+                    self.logger.info(f"Obsidian ({vault}): {action}")
+                actions += taken
+        return actions
+
+    def _readme_text(self):
+        flavors = parse_flavors(self.target.get("flavor", "generic"))
+        keys = {MARKER_KEY: MARKER_VALUE, README_KEY: True,
+                MACHINE_KEY: self.config.machine_label(),
+                MACHINE_ID_KEY: self.config.machine_id()}
+        if "obsidian" in flavors:
+            keys["cssclasses"] = ["stickies-mirror"]
+        policy = {"archive": f"moved to `{os.path.basename(self.target.deleted_dir())}/`",
+                  "mark": "left here, marked `deleted-from-stickies`",
+                  "delete": "removed", "keep": "left here unchanged"}[self.target.on_delete()]
+        body = f"""# Synced from Stickies - read-only
+
+The notes in this folder are **mirrors of Apple Stickies** on the Mac
+"{self.config.machine_label()}", kept in sync automatically by
+Stickies-to-Markdown. Stickies is the only place to edit them.
+
+- **Do not edit these files.** They are written read-only; an edited copy is
+  moved to `_conflicts/` and the file is rewritten from the sticky.
+- **Edits made in Stickies appear here** about 15-20 seconds after you stop
+  typing (Stickies autosaves ~10 s after the last change).
+- **A sticky deleted in Stickies:** its file is {policy}.
+- **Colours** are recorded in each note's properties (`color`, `color-hex`)
+  and, for the `obsidian` flavor, as `cssclasses` that a vault CSS snippet
+  styles.
+- **Stickies do not sync between Macs.** Every note names the Mac it came
+  from (`source-machine`); another Mac's mirror would live in its own
+  subfolder.
+
+This note is maintained by the tool too. Settings and logs: `stickies2md`
+in a terminal.
+"""
+        return render_front_matter(keys) + "\n" + body
+
+    def _write_readme(self):
+        path = os.path.join(self.output_dir, README_NAME)
+        rendered = self._readme_text()
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                existing = handle.read()
+        except FileNotFoundError:
+            existing = None
+        if existing is not None:
+            keys, _ = split_front_matter(existing)
+            if keys.get(MARKER_KEY) != MARKER_VALUE:
+                self.logger.error(f"{README_NAME}: exists but is not ours; left alone")
+                return []
+            if existing == rendered:
+                return []
+        if not self.dry_run:
+            os.makedirs(self.output_dir, exist_ok=True)
+            self._write_atomic(path, rendered)
+        self.logger.info(f"{'Would write' if self.dry_run else 'Wrote'} {README_NAME}")
+        return ["wrote readme"]
 
     def handle_deletions(self, live_uuids, excluded_uuids=()):
         """

@@ -82,9 +82,10 @@ class Sandbox:
         return sorted(p for p in self.container.iterdir() if p.suffix == ".rtfd")
 
     def mirror_files(self):
+        """Mirrored NOTE files (the maintained readme note is excluded)."""
         if not self.output.is_dir():
             return []
-        return sorted(p for p in self.output.glob("*.md"))
+        return sorted(p for p in self.output.glob("*.md") if not p.name.startswith("_About"))
 
     def tree_signature(self, top):
         """Hashable snapshot of a tree: (relpath, size, sha) per file."""
@@ -114,6 +115,14 @@ class Sandbox:
 
     def __exit__(self, *_exc):
         self.close()
+
+
+def notes_in(folder):
+    """Mirrored note files in a folder, excluding the maintained readme."""
+    folder = Path(folder)
+    if not folder.is_dir():
+        return []
+    return sorted(p for p in folder.glob("*.md") if not p.name.startswith("_About"))
 
 
 def wait_for(predicate, timeout=5.0, interval=0.05):

@@ -116,13 +116,30 @@ from each plugin's source, not guessed:
 | `floating-sticky-notes` | nothing — the generic `color:` key and its values are exactly what it reads | [Floating Sticky Notes](https://github.com/kasairo/floating-sticky-notes) (kasairo) |
 | `sticky-notes` | `background_color: Yellow` (capitalised; gray → `Base`) | [Sticky Notes](https://github.com/Abdo-reda/obsidian-sticky-notes-plugin) (abdo-reda) and its fork Simple Sticky Notes |
 | `colorful-stickynotes` | `colorful-sticky-bg: mint` (green → mint, purple → lavender) | [Colorful StickyNotes](https://github.com/pandanocturne/obsidian-colorful-stickynotes) |
-| `obsidian` | `cssclasses: [stickies-mirror, sticky-yellow]` | any theme, via the CSS snippet in `extras/obsidian/` — no plugin; the snippet also hides the Properties block on mirrored notes only |
+| `obsidian` | `cssclasses: [stickies-mirror, sticky-yellow]` | any theme, no plugin: the tool installs and enables a CSS snippet in the vault (see below) |
 
-To colour the note itself in the main editor (not a floating window),
-Colorful Note Background tints the body and Colorful Note Borders draws a
-border; both are rule-based on any `key: value`, so six rules on
-`color: yellow`, `color: blue`, ... work with no flavor at all. The
-floating-window plugins above colour only their own windows.
+Nothing in the plugin ecosystem tints a note from a colour named in its
+own front matter; the `obsidian` flavor is that feature. When an output
+has it, the tool finds the enclosing vault (nearest `.obsidian/` above the
+mirror folder), writes `.obsidian/snippets/stickies-mirror.css` and adds
+it to `enabledCssSnippets` in `appearance.json` — tint per colour, a
+"mirrored from Stickies" banner, and the Properties block hidden on
+mirrored notes only. Obsidian applies it on its next reload (Settings ›
+Appearance › CSS snippets › reload, or restart). The snippet is
+marker-checked like everything else: a file of that name the tool did not
+write is never touched, and the tool's own copy is refreshed when its
+built-in version changes. `obsidian_snippet: false` on the output turns
+this off. The floating-window plugins above colour only their own windows.
+
+## The folder explains itself
+
+Every mirror folder gets a first-sorted note,
+`_About these notes (read-only mirror).md`, stating that the files are
+read-only mirrors of Stickies on a named Mac, how fast edits arrive, what
+happens on deletion under this output's policy, and where settings live.
+It is maintained like a mirror file (rewritten when the policy changes,
+read-only, marker-checked, removed by `--purge-mirror`) and never indexed
+as a note. `readme_note: false` on the output turns it off.
 Desktop Sticky Notes stores colours in its own settings by file path, so
 no front matter can reach it. One caveat: plugins that *write* front matter
 back into a note (Colorful StickyNotes adds its own id on first open) will
@@ -232,6 +249,8 @@ into a single block named `default` the first time it is read.
 | `read_only_output` | `true` | chmod 444 mirror files |
 | `include_attachments` | `true` | copy package attachments |
 | `front_matter` | `true` | write the YAML block |
+| `readme_note` | `true` | maintain the first-sorted "read-only mirror" note |
+| `obsidian_snippet` | `true` | with the `obsidian` flavor: install/enable the vault CSS snippet |
 
 ### When a note is deleted in Stickies
 

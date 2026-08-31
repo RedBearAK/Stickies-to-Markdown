@@ -11,7 +11,7 @@ import stat
 
 from pathlib import Path
 
-from _helpers import Sandbox, check, run_suite
+from _helpers import Sandbox, check, run_suite, notes_in
 
 from stickies_to_markdown.engine.events import EventQueue
 from stickies_to_markdown.engine.logsetup import setup_logging
@@ -241,7 +241,7 @@ def test_two_outputs_with_different_settings():
                     "an output gets the default subfolder inside the folder given", str(plain))
         counters = _export(box)
         vault_files = sorted(f.name for f in box.mirror_files())
-        plain_files = sorted(f.name for f in plain.glob("*.md"))
+        plain_files = sorted(f.name for f in notes_in(plain))
         ok = ok0 & check(len(vault_files) == 6 and len(plain_files) == 7,
                    "gray note excluded from one output only",
                    f"vault={vault_files} plain={plain_files}")
@@ -380,6 +380,71 @@ def test_machine_placeholder_in_subfolder():
         ok &= check(len(machine_id()) == 8 and machine_id() == machine_id(),
                     f"detected machine id is 8 hex and stable ({machine_id()})", "")
         return ok
+
+
+def test_readme_note_maintained_and_sorted_first():
+    with Sandbox(on_delete="mark") as box:
+        _export(box)
+        readme = box.output / "_About these notes (read-only mirror).md"
+        ok = check(readme.is_file(), "readme note written into the mirror folder", "")
+        ok &= check(readme.name < min(f.name for f in box.mirror_files()),
+                    "sorts before every note (leading underscore)", readme.name)
+        keys, body = split_front_matter(readme.read_text(encoding="utf-8"))
+        ok &= check(keys.get("synced-by") == "stickies-to-markdown" and keys.get("mirror-readme") == "True"
+                    and "stickies-uuid" not in keys and "read-only" in body
+                    and "marked `deleted-from-stickies`" in body,
+                    "marked as ours, no uuid (never indexed as a note), states the policy", f"{keys}")
+        ok &= check(stat.S_IMODE(os.stat(readme).st_mode) == 0o444, "readme is read-only too", "")
+        before = box.tree_signature(box.output)
+        _export(box)
+        ok &= check(before == box.tree_signature(box.output), "idempotent across exports", "churn")
+        box.set_target("on_delete", "archive")
+        _export(box)
+        ok &= check("moved to `_deleted/`" in readme.read_text(encoding="utf-8"),
+                    "rewritten when the policy it describes changes", "stale")
+        readme.chmod(0o644)
+        readme.write_text("---\ntitle: mine\n---\nmy own note\n", encoding="utf-8")
+        _export(box)
+        ok &= check("my own note" in readme.read_text(encoding="utf-8"),
+                    "a foreign file with that name is left alone", "clobbered")
+        return ok
+
+
+def test_obsidian_snippet_installed_into_vault():
+    with Sandbox(flavor="obsidian") as box:
+        # Make the sandbox root look like a vault; the mirror is a subfolder of it.
+        (box.root / ".obsidian").mkdir()
+        (box.root / ".obsidian" / "appearance.json").write_text('{"baseFontSize": 16}', encoding="utf-8")
+        _export(box)
+        css = box.root / ".obsidian" / "snippets" / "stickies-mirror.css"
+        import json
+        appearance = json.loads((box.root / ".obsidian" / "appearance.json").read_text(encoding="utf-8"))
+        ok = check(css.is_file() and ".sticky-yellow" in css.read_text(encoding="utf-8"),
+                   "snippet written into <vault>/.obsidian/snippets/", "")
+        ok &= check(appearance.get("enabledCssSnippets") == ["stickies-mirror"]
+                    and appearance.get("baseFontSize") == 16,
+                    "enabled in appearance.json without disturbing other keys", f"{appearance}")
+        before = (css.stat().st_mtime_ns, (box.root / ".obsidian" / "appearance.json").stat().st_mtime_ns)
+        _export(box)
+        after = (css.stat().st_mtime_ns, (box.root / ".obsidian" / "appearance.json").stat().st_mtime_ns)
+        ok &= check(before == after, "second export touches neither file", "churn")
+        css.write_text("/* someone else's */ body {}", encoding="utf-8")
+        _export(box)
+        ok &= check(css.read_text(encoding="utf-8").startswith("/* someone else's"),
+                    "a foreign snippet of the same name is never overwritten", "clobbered")
+        return ok
+
+
+def test_no_vault_no_snippet_and_generic_flavor_no_snippet():
+    with Sandbox(flavor="obsidian") as box:          # no .obsidian anywhere above
+        _export(box)
+        ok = check(not (box.root / ".obsidian").exists(), "no vault found: nothing created", "")
+    with Sandbox(flavor="generic") as box:
+        (box.root / ".obsidian").mkdir()
+        _export(box)
+        ok &= check(not (box.root / ".obsidian" / "snippets").exists(),
+                    "generic flavor: vault present but no snippet installed", "")
+    return ok
 
 
 def test_custom_deleted_dir_and_collision():
@@ -522,7 +587,8 @@ if __name__ == "__main__":
              test_two_outputs_with_different_settings, test_legacy_flat_config_migrates,
              test_plugin_flavors_from_source, test_subfolder_blank_writes_directly,
              test_slug_style_collision_and_rename, test_machine_identity_isolates_shared_folders,
-             test_machine_placeholder_in_subfolder,
+             test_machine_placeholder_in_subfolder, test_readme_note_maintained_and_sorted_first,
+             test_obsidian_snippet_installed_into_vault, test_no_vault_no_snippet_and_generic_flavor_no_snippet,
              test_custom_deleted_dir_and_collision, test_exclusion_by_color_is_reactive,
              test_exclusion_by_title_regex_with_archive, test_attachments_follow_the_file,
              test_container_never_touched,

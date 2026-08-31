@@ -16,7 +16,7 @@ import tempfile
 
 from pathlib import Path
 
-from _helpers import Sandbox, FIXTURES, check, run_suite, wait_for
+from _helpers import Sandbox, FIXTURES, check, run_suite, wait_for, notes_in
 
 from stickies_to_markdown.engine import Engine, EngineError, Config
 
@@ -267,7 +267,7 @@ def test_hot_reload_output_dir_triggers_export():
             ok = check(wait_for(engine.reload_config_if_changed, timeout=3),
                        "config change on disk detected", "")
             resolved = other / "Synced_from_Stickies"
-            ok &= check(wait_for(lambda: len(list(resolved.glob("*.md"))) == 7, timeout=8),
+            ok &= check(wait_for(lambda: len(notes_in(resolved)) == 7, timeout=8),
                         "new output folder populated by a full export", f"{list(other.glob('*'))}")
             return ok
         finally:

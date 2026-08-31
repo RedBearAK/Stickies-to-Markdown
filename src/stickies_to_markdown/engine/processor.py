@@ -200,6 +200,11 @@ class NoteProcessor:
             removed = writer.handle_deletions(live, excluded[writer.name])
             self.counters.bump("deleted", len(removed) - len(writer.last_excluded))
             self.counters.bump("excluded", len(writer.last_excluded))
+            try:
+                writer.maintain_extras()
+            except OSError as error:
+                self.logger.error(f"{writer.name}: extras: {error}")
+                self.events.put(Event("error", writer.output_dir, f"extras: {error}"))
         self.events.put(Event("scanned", stickies_dir,
                               f"{len(notes)} notes; {self.counters.as_dict()}"))
         self.logger.info(f"Export complete: {self.counters.as_dict()}")

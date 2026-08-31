@@ -488,6 +488,9 @@ class StickiesTUI:
                 ("9", "Read-only mirror files", "yes" if t.get("read_only_output") else "no"),
                 ("10", "Include attachments", "yes" if t.get("include_attachments") else "no"),
                 ("11", "Front matter", "yes" if t.get("front_matter") else "no"),
+                ("15", "Maintain the '_About' read-only note", "yes" if t.get("readme_note", True) else "no"),
+                ("16", "Install Obsidian CSS snippet (obsidian flavor)",
+                 "yes" if t.get("obsidian_snippet", True) else "no"),
                 ("12", "Rename this output", name),
             ]
             table = Table(show_header=False, box=None, padding=(0, 2))
@@ -582,6 +585,13 @@ class StickiesTUI:
 
     def _set_o11(self, name):
         self._set_target_bool(name, "front_matter", "Write YAML front matter?")
+
+    def _set_o15(self, name):
+        self._set_target_bool(name, "readme_note", "Maintain the '_About these notes' note?")
+
+    def _set_o16(self, name):
+        self._set_target_bool(name, "obsidian_snippet",
+                              "Install and enable the CSS snippet in the enclosing vault?")
 
     # --- shared prompt helpers ---------------------------------------------
 

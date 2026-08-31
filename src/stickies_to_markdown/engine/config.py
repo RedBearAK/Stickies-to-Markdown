@@ -80,6 +80,12 @@ TARGET_DEFAULTS = {
     "read_only_output": True,               # chmod 444 mirror files
     "include_attachments": True,
     "front_matter": True,
+    # A first-sorted note in the mirror folder explaining that its files are
+    # read-only mirrors (maintained by the tool, marker-checked).
+    "readme_note": True,
+    # With the "obsidian" flavor: install and enable the CSS snippet in the
+    # enclosing vault's .obsidian/snippets/ (found by walking up).
+    "obsidian_snippet": True,
 }
 
 # Keys that used to live at the top level of a single-output config.
