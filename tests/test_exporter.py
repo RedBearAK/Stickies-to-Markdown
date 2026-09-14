@@ -370,6 +370,37 @@ def test_machine_identity_isolates_shared_folders():
         return ok
 
 
+def test_shared_folder_without_machine_subfolder_warns():
+    from stickies_to_markdown.engine.events import EventQueue as _EQ
+    from stickies_to_markdown.engine.processor import NoteProcessor as _NP
+    with Sandbox(machine_label="mac-a", machine_id="aaaaaaaa") as box:
+        # A file from another Mac already in the folder (as Dropbox would deliver it).
+        (box.output / "their-note--deadbeef.md").write_text(
+            "---\nsynced-by: stickies-to-markdown\nsource-machine: mac-b\nsource-machine-id: bbbbbbbb\n"
+            "stickies-uuid: DEADBEEF-0000-4000-8000-000000000000\ncontent-hash: x\n---\n\ntheirs\n",
+            encoding="utf-8")
+        setup_logging(box.config)
+        events = _EQ()
+        _NP(box.config, events).export_all()
+        errors = [e for e in events.drain() if e.kind == "error"]
+        ok = check(len(errors) == 1 and "another machine" in errors[0].detail
+                   and "{machine}" in errors[0].detail,
+                   "shared folder detected: one warning naming the per-machine subfolder fix",
+                   f"{errors}")
+        ok &= check((box.output / "their-note--deadbeef.md").read_text(encoding="utf-8").endswith("theirs\n"),
+                    "the other machine's file untouched", "")
+    with Sandbox(machine_label="mac-a", machine_id="aaaaaaaa",
+                 subfolder="Synced_from_Stickies/{machine}") as box:
+        setup_logging(box.config)
+        events = _EQ()
+        _NP(box.config, events).export_all()
+        ok &= check(not [e for e in events.drain() if e.kind == "error"]
+                    and (box.output / "Synced_from_Stickies" / "mac-a").is_dir() is False
+                    and box.target.output_dir().endswith(os.path.join("Synced_from_Stickies", "mac-a")),
+                    "per-machine subfolder: no warning, files land under the label", box.target.output_dir())
+        return ok
+
+
 def test_machine_placeholder_in_subfolder():
     with Sandbox(machine_label="studio", machine_id="c0ffee00", subfolder="Stickies/{machine}") as box:
         ok = check(box.target.output_dir() == str(box.output / "Stickies" / "studio"),
@@ -587,7 +618,8 @@ if __name__ == "__main__":
              test_two_outputs_with_different_settings, test_legacy_flat_config_migrates,
              test_plugin_flavors_from_source, test_subfolder_blank_writes_directly,
              test_slug_style_collision_and_rename, test_machine_identity_isolates_shared_folders,
-             test_machine_placeholder_in_subfolder, test_readme_note_maintained_and_sorted_first,
+             test_machine_placeholder_in_subfolder, test_shared_folder_without_machine_subfolder_warns,
+             test_readme_note_maintained_and_sorted_first,
              test_obsidian_snippet_installed_into_vault, test_no_vault_no_snippet_and_generic_flavor_no_snippet,
              test_custom_deleted_dir_and_collision, test_exclusion_by_color_is_reactive,
              test_exclusion_by_title_regex_with_archive, test_attachments_follow_the_file,

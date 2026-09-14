@@ -210,9 +210,15 @@ class OutputTarget:
         blank, or the base already IS that subfolder (no double nesting)."""
         base = self.base_dir()
         sub = self.subfolder()
-        if not base or not sub or os.path.basename(base.rstrip("/")) == sub:
+        if not base or not sub:
             return base
-        return os.path.join(base, sub)
+        # No double nesting: if the named folder already IS the subfolder's
+        # first component (…/Synced_from_Stickies + "Synced_from_Stickies/{machine}"),
+        # drop that component.
+        parts = sub.split("/")
+        if parts[0] == os.path.basename(base.rstrip("/")):
+            parts = parts[1:]
+        return os.path.join(base, *parts) if parts else base
 
     def on_delete(self):
         value = str(self.data.get("on_delete") or "archive")

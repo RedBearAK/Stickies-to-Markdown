@@ -218,8 +218,17 @@ set one) and `source-machine-id` (8 hex characters of the hardware UUID on
 macOS, `/etc/machine-id` on Linux — stable across renames and OS
 reinstalls). Stickies do not sync between Macs, so two Macs mirroring into
 one shared folder would otherwise each see the other's files as vanished
-notes; a writer manages only files whose id is its own. `{machine}` or
-`{machine_id}` in an output's `subfolder` keeps them in separate folders.
+notes; a writer manages only files whose id is its own.
+
+**Two Macs, one synced vault:** that isolation makes a shared folder safe,
+not tidy — `slug`-style names collide across machines and the `_About`
+note churns. Give each Mac its own subfolder: set the output's `subfolder`
+to `Synced_from_Stickies/{machine}` on both, and pin `machine_label` in
+each config (Settings › 7) so the folder is `Synced_from_Stickies/air/`
+rather than a hostname that might change. The writer detects another
+machine's files in a flat folder and says exactly this in the log and the
+status line. `{machine_id}` works too, if you prefer the stable hash to a
+name you chose.
 
 ## Safety rules
 

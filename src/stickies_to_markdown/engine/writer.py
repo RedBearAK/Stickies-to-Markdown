@@ -182,6 +182,8 @@ class Writer:
         self._mirror_index = None       # uuid -> filename, lazy
         self.last_excluded = []
         self._unavailable_reported = False
+        self.foreign_machine_files = 0  # counted while indexing; see maintain_extras
+        self._shared_warned = False
 
     def available(self):
         """
@@ -281,6 +283,18 @@ class Writer:
         actions = []
         if not self.available():
             return actions
+        self._index()
+        subfolder = str(self.target.data.get("subfolder") or "")
+        if self.foreign_machine_files and "{machine" not in subfolder and not self._shared_warned:
+            self._shared_warned = True
+            message = (f"this folder also holds {self.foreign_machine_files} mirror file(s) from another "
+                       f"machine. Shared folders need a per-machine subfolder, or filenames collide and "
+                       f"the readme churns: set the output's subfolder to "
+                       f"'{self.target.subfolder() or 'Synced_from_Stickies'}/{{machine}}' on every Mac "
+                       f"(and pin machine_label in each config)")
+            self.logger.warning(f"Output '{self.name}': {message}")
+            self.events.put(Event("error", self.output_dir, message))
+            actions.append("shared folder warning")
         if self.target.get("readme_note", True):
             actions += self._write_readme()
         if self.target.get("obsidian_snippet", True) and \
@@ -584,6 +598,7 @@ in a terminal.
         if self._mirror_index is not None:
             return self._mirror_index
         index = {}
+        foreign = 0
         try:
             names = sorted(os.listdir(self.output_dir))
         except OSError:
@@ -603,9 +618,11 @@ in a terminal.
             # Another Mac's mirror files in a shared folder are not ours to
             # rename, archive or delete: they belong to notes we cannot see.
             if not self._is_this_machine(keys):
+                foreign += 1
                 continue
             index[keys["stickies-uuid"].strip('"')] = name
         self._mirror_index = index
+        self.foreign_machine_files = foreign
         return index
 
     @staticmethod

@@ -145,6 +145,18 @@ def test_sign_identity_is_remembered():
         return ok
 
 
+def test_self_sign_is_noop_off_macos():
+    from stickies_to_markdown.frontends.bundle import ensure_self_signed_identity, recorded_sign_identity
+    if sys.platform == "darwin":
+        print("  - macOS: self-sign not exercised by the suite (touches the keychain)")
+        return True
+    with tempfile.TemporaryDirectory() as tmp:
+        ok = check(ensure_self_signed_identity(lambda _: None) is None, "self-sign returns None off macOS", "")
+        path = install_app(tmp, out=lambda _: None, self_sign=True)
+        ok &= check(recorded_sign_identity(path) == "-", "--self-sign falls back to ad-hoc off macOS", "")
+        return ok
+
+
 def test_reinstall_and_foreign_bundle():
     with tempfile.TemporaryDirectory() as tmp:
         path = install_app(tmp, out=lambda _: None)
@@ -170,7 +182,8 @@ def test_reinstall_and_foreign_bundle():
 if __name__ == "__main__":
     tests = [test_bundle_structure, test_compiled_and_script_launchers,
              test_launchers_run_and_reach_the_dispatcher, test_compiled_launcher_forwards_sigterm,
-             test_sign_identity_is_remembered, test_reinstall_and_foreign_bundle]
+             test_sign_identity_is_remembered, test_self_sign_is_noop_off_macos,
+             test_reinstall_and_foreign_bundle]
     exit(0 if run_suite("bundle tests", tests) else 1)
 
 

@@ -172,6 +172,61 @@ def recorded_interpreter(path):
 
 
 SIGN_IDENTITY_KEY = "S2MCodesignIdentity"     # remembered in Info.plist
+SELF_SIGN_NAME = "Stickies2md Signing"        # the certificate --self-sign creates
+
+
+def ensure_self_signed_identity(out):
+    """
+    EXPERIMENTAL. Create (once) a self-signed Code Signing certificate in
+    the login keychain and return its name, or None on failure. macOS asks
+    for the login password during the keychain steps. Whether tccd will
+    persist grants against a self-signed certificate is unverified; the
+    deterministic alternative is Full Disk Access (README).
+    """
+    if sys.platform != "darwin":
+        return None
+    found = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"],
+                           capture_output=True, text=True)
+    if SELF_SIGN_NAME in found.stdout:
+        out(f"  signing certificate '{SELF_SIGN_NAME}' already in the keychain")
+        return SELF_SIGN_NAME
+
+    keychain = os.path.expanduser("~/Library/Keychains/login.keychain-db")
+    work = tempfile.mkdtemp(prefix="s2m-sign-")
+    key, cert, p12, cnf = (os.path.join(work, n) for n in ("key.pem", "cert.pem", "id.p12", "openssl.cnf"))
+    with open(cnf, "w", encoding="ascii") as handle:
+        handle.write(
+            "[req]\ndistinguished_name = dn\nx509_extensions = v3\nprompt = no\n"
+            f"[dn]\nCN = {SELF_SIGN_NAME}\n"
+            "[v3]\nbasicConstraints = critical,CA:false\n"
+            "keyUsage = critical,digitalSignature\n"
+            "extendedKeyUsage = critical,codeSigning\n")
+    steps = [
+        ("create key and certificate",
+         ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3650",
+          "-keyout", key, "-out", cert, "-config", cnf]),
+        ("bundle as PKCS#12",
+         ["openssl", "pkcs12", "-export", "-inkey", key, "-in", cert, "-out", p12,
+          "-passout", "pass:s2m", "-name", SELF_SIGN_NAME]),
+        ("import into the login keychain (codesign allowed to use the key)",
+         ["security", "import", p12, "-k", keychain, "-P", "s2m", "-T", "/usr/bin/codesign"]),
+        ("trust it for code signing (macOS may ask for your password)",
+         ["security", "add-trusted-cert", "-r", "trustRoot", "-p", "codeSign", "-k", keychain, cert]),
+        ("let codesign use the key without a prompt (enter the login keychain password)",
+         ["security", "set-key-partition-list", "-S", "apple-tool:,apple:,codesign:", "-s", keychain]),
+    ]
+    try:
+        for label, command in steps:
+            out(f"  {label}...")
+            result = subprocess.run(command, capture_output=(command[0] == "openssl"), text=True)
+            if result.returncode != 0:
+                out(f"  FAILED: {' '.join(command[:2])} (rc={result.returncode}) "
+                    f"{(result.stderr or '').strip()[:300]}")
+                return None
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    out(f"  created signing certificate '{SELF_SIGN_NAME}'")
+    return SELF_SIGN_NAME
 
 
 def recorded_sign_identity(path):
@@ -213,7 +268,7 @@ def codesign(path, out, identity="-"):
 
 
 def install_app(app_dir=None, interpreter=None, src_dir=None, name=APP_NAME, out=print,
-                sign_identity=None):
+                sign_identity=None, self_sign=False):
     """
     Write (or refresh) the bundle. Returns its path, or None when it
     refused to overwrite something it did not create. The signing identity
@@ -230,6 +285,9 @@ def install_app(app_dir=None, interpreter=None, src_dir=None, name=APP_NAME, out
         return None
 
     existing = recorded_interpreter(path)
+    if self_sign and not sign_identity:
+        out("Self-signed certificate (experimental):")
+        sign_identity = ensure_self_signed_identity(out) or "-"
     sign_identity = sign_identity or recorded_sign_identity(path) or "-"
     contents = os.path.join(path, "Contents")
     macos = os.path.join(contents, "MacOS")
@@ -275,8 +333,9 @@ def install_app(app_dir=None, interpreter=None, src_dir=None, name=APP_NAME, out
     if codesign(path, out, sign_identity):
         out(f"  signed:      {'ad-hoc' if sign_identity == '-' else sign_identity}")
         if sign_identity == "-":
-            out("  requirement: identifier-based (so TCC can persist grants)")
-            out("  verify:      codesign -dr - \"<the .app>\"   ->   designated => identifier ...")
+            out("  NOTE: macOS stores the 'access data from other apps' grant only for the")
+            out("  session with an ad-hoc signature. The app offers Full Disk Access on launch")
+            out("  (one switch, no more prompts); or try --install-app --self-sign (experimental).")
 
     out("")
     out("Next steps:")
