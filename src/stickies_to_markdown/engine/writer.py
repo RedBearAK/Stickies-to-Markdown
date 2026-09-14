@@ -290,8 +290,7 @@ class Writer:
             message = (f"this folder also holds {self.foreign_machine_files} mirror file(s) from another "
                        f"machine. Shared folders need a per-machine subfolder, or filenames collide and "
                        f"the readme churns: set the output's subfolder to "
-                       f"'{self.target.subfolder() or 'Synced_from_Stickies'}/{{machine}}' on every Mac "
-                       f"(and pin machine_label in each config)")
+                       f"'{self.target.subfolder() or 'Synced_from_Stickies'}/{{machine_id}}' on every Mac")
             self.logger.warning(f"Output '{self.name}': {message}")
             self.events.put(Event("error", self.output_dir, message))
             actions.append("shared folder warning")
@@ -320,8 +319,9 @@ class Writer:
         body = f"""# Synced from Stickies - read-only
 
 The notes in this folder are **mirrors of Apple Stickies** on the Mac
-"{self.config.machine_label()}", kept in sync automatically by
-Stickies-to-Markdown. Stickies is the only place to edit them.
+"{self.config.machine_label()}" (machine id {self.config.machine_id()} - the
+folder name, which stays the same if the Mac is renamed), kept in sync
+automatically by Stickies-to-Markdown. Stickies is the only place to edit them.
 
 - **Do not edit these files.** They are written read-only; an edited copy is
   moved to `_conflicts/` and the file is rewritten from the sticky.

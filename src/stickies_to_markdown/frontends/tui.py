@@ -460,7 +460,8 @@ class StickiesTUI:
             self.pause()
             return
         self.console.print("[dim]Point at the vault (or any folder); the mirror is created inside it "
-                           f"as '{DEFAULT_SUBFOLDER}/' ({{machine}} = this Mac's label, Settings > 7) "
+                           f"as '{DEFAULT_SUBFOLDER}/' ({{machine_id}} = this Mac's stable id, "
+                           f"{self.config.machine_id()}; the _About note inside names the Mac) "
                            "- change that on the output's screen.[/dim]")
         self.console.print("[dim]markdown = annotated .md mirror for Obsidian etc.; "
                            "backup = verbatim restorable copy of the notes.[/dim]")

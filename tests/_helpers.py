@@ -67,6 +67,7 @@ class Sandbox:
             "stickies_dir": str(self.container),
             "log_file": str(self.config_dir / "stickies_to_markdown.log"),
             "machine_label": "testmac",
+            "machine_id": "testmac",       # pinned so default paths are predictable
         }
         for key, value in config_overrides.items():
             (block if key in TARGET_DEFAULTS else settings)[key] = value

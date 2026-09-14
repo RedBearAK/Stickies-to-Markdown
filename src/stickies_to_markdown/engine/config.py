@@ -59,9 +59,10 @@ FLAVOR_CHOICES = ("generic", "obsidian", "floating-sticky-notes", "sticky-notes"
                   "colorful-stickynotes")
 # Per-machine by default: Stickies do not sync, so a vault shared between
 # Macs holds each Mac's notes separately (and slug-style names never
-# collide across machines). Pin machine_label so the folder is a name you
-# chose, not a hostname that might change.
-DEFAULT_SUBFOLDER = "Synced_from_Stickies/{machine}"
+# collide across machines). Keyed on the stable machine id, never the
+# label - a renamed Mac must not orphan its own mirror. The _About note
+# inside the folder says which Mac it is in human terms.
+DEFAULT_SUBFOLDER = "Synced_from_Stickies/{machine_id}"
 
 # One block per mirror folder. Every key is optional in the file; missing
 # ones take these defaults. `name` is the handle used by --set NAME.KEY and

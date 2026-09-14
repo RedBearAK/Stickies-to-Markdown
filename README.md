@@ -222,13 +222,10 @@ notes; a writer manages only files whose id is its own.
 
 **Two Macs, one synced vault:** that isolation makes a shared folder safe,
 not tidy — `slug`-style names collide across machines and the `_About`
-note churns. Give each Mac its own subfolder: set the output's `subfolder`
-to `Synced_from_Stickies/{machine}` on both, and pin `machine_label` in
-each config (Settings › 7) so the folder is `Synced_from_Stickies/air/`
-rather than a hostname that might change. The writer detects another
-machine's files in a flat folder and says exactly this in the log and the
-status line. `{machine_id}` works too, if you prefer the stable hash to a
-name you chose.
+note churns — which is why the default subfolder is per-machine, keyed on
+the stable id. Flatten it only for a single Mac. The writer detects
+another machine's files in a flat folder and says so in the log and the
+status line.
 
 ## Safety rules
 
@@ -285,11 +282,13 @@ stickies2md --purge-mirror DIR [--yes]             # remove only what the tool w
 ```
 
 Point an output at your vault (or any folder): the mirror is created
-**inside it as `Synced_from_Stickies/<machine>/`**, so nothing spills into
-a vault root and two Macs sharing the vault stay apart. `<machine>` is
-this Mac's label — pin it in Settings › 7 so it is a name you chose.
-`subfolder` on the output changes the layout (`Synced_from_Stickies` alone
-for a flat folder; blank to write directly into the folder). `--purge-mirror DIR` removes only files carrying
+**inside it as `Synced_from_Stickies/<machine-id>/`**, so nothing spills
+into a vault root and two Macs sharing the vault stay apart. The id is a
+stable hash of the hardware UUID, so the folder never moves when a Mac is
+renamed; the `_About` note inside says which Mac it is. `subfolder` on the
+output changes the layout (`Synced_from_Stickies/{machine}` for the label
+instead, `Synced_from_Stickies` alone for a flat folder, blank to write
+directly into the folder). `--purge-mirror DIR` removes only files carrying
 the tool's marker (and their attachments), for cleaning up after a folder
 mistake.
 
@@ -311,7 +310,7 @@ into a single block named `default` the first time it is read.
 | `name` | — | handle for `--set NAME.KEY` and the menu |
 | `type` | `markdown` | or `backup` (keys below marked *backup* apply only then) |
 | `output_dir` | — | the folder the mirror is created inside |
-| `subfolder` | `Synced_from_Stickies/{machine}` | mirror location inside `output_dir`; blank = none |
+| `subfolder` | `Synced_from_Stickies/{machine_id}` | mirror location inside `output_dir`; blank = none |
 | `flavor` | `generic` | one or more flavors, comma-separated (see The output format) |
 | `filename_style` | `slug-uuid` | `slug` / `uuid` (see The output format) |
 | `on_delete` | `archive` | `mark` / `delete` / `keep` — see below |

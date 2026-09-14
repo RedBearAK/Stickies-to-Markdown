@@ -385,7 +385,7 @@ def test_shared_folder_without_machine_subfolder_warns():
         _NP(box.config, events).export_all()
         errors = [e for e in events.drain() if e.kind == "error"]
         ok = check(len(errors) == 1 and "another machine" in errors[0].detail
-                   and "{machine}" in errors[0].detail,
+                   and "{machine_id}" in errors[0].detail,
                    "shared folder detected: one warning naming the per-machine subfolder fix",
                    f"{errors}")
         ok &= check((box.output / "their-note--deadbeef.md").read_text(encoding="utf-8").endswith("theirs\n"),
