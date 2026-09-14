@@ -238,8 +238,8 @@ def test_two_outputs_with_different_settings():
         plain_base.mkdir()
         box.config.add_target("plain", str(plain_base), flavor="generic", on_delete="archive")
         plain = Path(box.config.target("plain").output_dir())
-        ok0 = check(plain == plain_base / "Synced_from_Stickies",
-                    "an output gets the default subfolder inside the folder given", str(plain))
+        ok0 = check(plain == plain_base / "Synced_from_Stickies" / "testmac",
+                    "an output gets the default per-machine subfolder inside the folder given", str(plain))
         counters = _export(box)
         vault_files = sorted(f.name for f in box.mirror_files())
         plain_files = sorted(f.name for f in notes_in(plain))
@@ -342,7 +342,8 @@ def test_slug_style_collision_and_rename():
 
 def test_machine_identity_isolates_shared_folders():
     """Two Macs mirroring into one folder: neither touches the other's files."""
-    with Sandbox(machine_label="mac-a", machine_id="aaaaaaaa") as box:
+    # Explicitly FLAT: the scenario is two Macs writing into one folder.
+    with Sandbox(machine_label="mac-a", machine_id="aaaaaaaa", subfolder="Synced_from_Stickies") as box:
         _export(box)
         keys, _ = split_front_matter((box.output / "grocery-list--11111111.md").read_text(encoding="utf-8"))
         ok = check(keys.get("source-machine") == "mac-a" and keys.get("source-machine-id") == "aaaaaaaa",
@@ -373,8 +374,8 @@ def test_machine_identity_isolates_shared_folders():
 def test_shared_folder_without_machine_subfolder_warns():
     from stickies_to_markdown.engine.events import EventQueue as _EQ
     from stickies_to_markdown.engine.processor import NoteProcessor as _NP
-    with Sandbox(machine_label="mac-a", machine_id="aaaaaaaa") as box:
-        # A file from another Mac already in the folder (as Dropbox would deliver it).
+    with Sandbox(machine_label="mac-a", machine_id="aaaaaaaa", subfolder="Synced_from_Stickies") as box:
+        # A file from another Mac already in the FLAT folder (as Dropbox would deliver it).
         (box.output / "their-note--deadbeef.md").write_text(
             "---\nsynced-by: stickies-to-markdown\nsource-machine: mac-b\nsource-machine-id: bbbbbbbb\n"
             "stickies-uuid: DEADBEEF-0000-4000-8000-000000000000\ncontent-hash: x\n---\n\ntheirs\n",
@@ -395,7 +396,6 @@ def test_shared_folder_without_machine_subfolder_warns():
         events = _EQ()
         _NP(box.config, events).export_all()
         ok &= check(not [e for e in events.drain() if e.kind == "error"]
-                    and (box.output / "Synced_from_Stickies" / "mac-a").is_dir() is False
                     and box.target.output_dir().endswith(os.path.join("Synced_from_Stickies", "mac-a")),
                     "per-machine subfolder: no warning, files land under the label", box.target.output_dir())
         return ok
@@ -403,10 +403,10 @@ def test_shared_folder_without_machine_subfolder_warns():
 
 def test_machine_placeholder_in_subfolder():
     with Sandbox(machine_label="studio", machine_id="c0ffee00", subfolder="Stickies/{machine}") as box:
-        ok = check(box.target.output_dir() == str(box.output / "Stickies" / "studio"),
+        ok = check(box.target.output_dir() == str(box.named / "Stickies" / "studio"),
                    "{machine} expands to the label", box.target.output_dir())
         box.set_target("subfolder", "Stickies/{machine_id}")
-        ok &= check(box.target.output_dir() == str(box.output / "Stickies" / "c0ffee00"),
+        ok &= check(box.target.output_dir() == str(box.named / "Stickies" / "c0ffee00"),
                     "{machine_id} expands to the stable id", box.target.output_dir())
         from stickies_to_markdown.engine.config import machine_id
         ok &= check(len(machine_id()) == 8 and machine_id() == machine_id(),

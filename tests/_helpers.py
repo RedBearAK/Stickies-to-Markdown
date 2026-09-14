@@ -42,13 +42,14 @@ class Sandbox:
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         self.container = self.root / "Stickies"
-        self.output = self.root / "Synced_from_Stickies"
+        self.named = self.root / "Synced_from_Stickies"       # the folder the output names
+        self.output = None                                     # resolved from the config below
         self.config_dir = self.root / "config"
         self.container.mkdir()
         self.config_dir.mkdir()
         # The folder an output NAMES must exist (the tool never creates it -
         # see Writer.available()); only its own subfolder is created.
-        self.output.mkdir()
+        self.named.mkdir()
 
         for item in sorted(FIXTURES.iterdir()):
             if item.suffix == ".rtfd" and item.is_dir():
@@ -61,15 +62,20 @@ class Sandbox:
             config_file=str(self.config_dir / "stickies_to_markdown.json"))
         # Per-output keys (on_delete, flavor, exclude_colors, ...) go into
         # the single "default" output block; everything else is global.
-        block = {"name": "default", "output_dir": str(self.output)}
+        block = {"name": "default", "output_dir": str(self.named)}
         settings = {
             "stickies_dir": str(self.container),
             "log_file": str(self.config_dir / "stickies_to_markdown.log"),
+            "machine_label": "testmac",
         }
         for key, value in config_overrides.items():
             (block if key in TARGET_DEFAULTS else settings)[key] = value
         settings["outputs"] = [block]
         self.config.update(settings)
+        # Where files actually land (named/<machine label> by default).
+        self.output = Path(self.config.targets()[0].output_dir())
+        if self.config.targets()[0].type == "markdown":
+            self.output.mkdir(parents=True, exist_ok=True)     # backups create their own
 
     @property
     def target(self):

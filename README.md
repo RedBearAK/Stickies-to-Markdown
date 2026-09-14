@@ -285,9 +285,11 @@ stickies2md --purge-mirror DIR [--yes]             # remove only what the tool w
 ```
 
 Point an output at your vault (or any folder): the mirror is created
-**inside it as `Synced_from_Stickies/`**, so nothing spills into a vault
-root. `subfolder` on the output changes the name; blank it to write
-directly into the folder. `--purge-mirror DIR` removes only files carrying
+**inside it as `Synced_from_Stickies/<machine>/`**, so nothing spills into
+a vault root and two Macs sharing the vault stay apart. `<machine>` is
+this Mac's label — pin it in Settings › 7 so it is a name you chose.
+`subfolder` on the output changes the layout (`Synced_from_Stickies` alone
+for a flat folder; blank to write directly into the folder). `--purge-mirror DIR` removes only files carrying
 the tool's marker (and their attachments), for cleaning up after a folder
 mistake.
 
@@ -309,7 +311,7 @@ into a single block named `default` the first time it is read.
 | `name` | — | handle for `--set NAME.KEY` and the menu |
 | `type` | `markdown` | or `backup` (keys below marked *backup* apply only then) |
 | `output_dir` | — | the folder the mirror is created inside |
-| `subfolder` | `Synced_from_Stickies` | mirror folder name inside `output_dir`; blank = none |
+| `subfolder` | `Synced_from_Stickies/{machine}` | mirror location inside `output_dir`; blank = none |
 | `flavor` | `generic` | one or more flavors, comma-separated (see The output format) |
 | `filename_style` | `slug-uuid` | `slug` / `uuid` (see The output format) |
 | `on_delete` | `archive` | `mark` / `delete` / `keep` — see below |

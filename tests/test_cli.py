@@ -46,8 +46,8 @@ def test_per_run_override_not_saved():
         other.mkdir()
         code, _out, _err = _run(box, "--once", "--output-dir", str(other),
                                 "--filename-style", "uuid")
-        ok = check(code == 0 and len(notes_in(other / "Synced_from_Stickies")) == 7,
-                   "--output-dir override honoured (with the default subfolder)", f"rc={code}")
+        ok = check(code == 0 and len(notes_in(other / "Synced_from_Stickies" / "testmac")) == 7,
+                   "--output-dir override honoured (with the default per-machine subfolder)", f"rc={code}")
         box.config.reload()
         ok &= check(box.config.output_dirs() == [str(box.output)],
                     "override did not touch the saved config",

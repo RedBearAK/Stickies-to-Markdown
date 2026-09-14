@@ -61,7 +61,7 @@ def test_settings_change_persists():
                    "per-output and global settings edited in the menu are saved",
                    f"{fresh.target('default').on_delete()} {fresh.get('dry_run')}")
         ok &= check([t.name for t in fresh.targets()] == ["default", "plain"]
-                    and fresh.target("plain").output_dir() == os.path.join(other, "Synced_from_Stickies"),
+                    and fresh.target("plain").output_dir() == os.path.join(other, "Synced_from_Stickies", "testmac"),
                     "a second output added from the menu, with the default subfolder", f"{fresh.targets()}")
         return ok
 

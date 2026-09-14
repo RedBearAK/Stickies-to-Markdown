@@ -5,6 +5,6 @@
 # This string also becomes CFBundleVersion / CFBundleShortVersionString in
 # the .app bundle (period-separated integers, which this satisfies) and the
 # `stickies2md --version` output.
-__version__ = "20260913.1"
+__version__ = "20260913.2"
 
 # End of File #

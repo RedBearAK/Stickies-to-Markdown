@@ -32,7 +32,7 @@ def _backup_box(**overrides):
     """A sandbox whose single output is a backup block; `base` is the folder
     the user named, `replica` where packages land."""
     box = Sandbox(type="backup", **overrides)
-    box.base = box.output                         # exists (Sandbox made it)
+    box.base = box.named                          # the folder the user named (exists)
     box.replica = Path(box.target.output_dir())
     return box
 
@@ -201,7 +201,7 @@ def test_restore_round_trip_from_replica_and_zip():
 
 def test_unavailable_at_start_writes_nothing_and_creates_nothing():
     with _backup_box() as box:
-        box.base.rmdir()                            # "volume not mounted"
+        shutil.rmtree(box.base)                     # "volume not mounted"
         counters = _export(box)
         ok = check(not box.base.exists(), "the named folder was NOT created (mount point untouched)", "")
         ok &= check(counters.errors == 7 and counters.converted == 0,
@@ -219,11 +219,11 @@ def test_unavailable_at_start_writes_nothing_and_creates_nothing():
 
 def test_markdown_output_has_the_same_guard():
     with Sandbox() as box:
-        box.output.rmdir()
+        shutil.rmtree(box.named)
         counters = _export(box)
-        ok = check(not box.output.exists() and counters.errors == 7,
+        ok = check(not box.named.exists() and counters.errors == 7,
                    "markdown output: missing named folder never created, notes reported", f"{counters.as_dict()}")
-        box.output.mkdir()
+        box.named.mkdir()
         counters = _export(box)
         ok &= check(counters.converted == 7 and len(box.mirror_files()) == 7,
                     "markdown output resumes", f"{counters.as_dict()}")

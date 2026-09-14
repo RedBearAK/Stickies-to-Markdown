@@ -90,8 +90,13 @@ class StickiesTUI:
                 self.console.print("Outputs: [red]none configured - Settings > Outputs[/red]")
             else:
                 for t in targets:
-                    self.console.print(f"Output [bold]{t.name}[/bold]: {t.output_dir() or '[red]no folder[/red]'}"
-                                       f"  [dim]{t.get('flavor')}, on delete {t.on_delete()}[/dim]")
+                    if t.type == "backup":
+                        detail = ("replica" if t.get("replica", True) else "no replica") + \
+                                 (", snapshots" if t.get("snapshots") else "")
+                    else:
+                        detail = f"{t.get('flavor')}, on delete {t.on_delete()}"
+                    self.console.print(f"Output [bold]{t.name}[/bold] [dim]({t.type})[/dim]: "
+                                       f"'{t.output_dir() or '[red]no folder[/red]'}'  [dim]{detail}[/dim]")
             self.console.print("[dim]Settings save on change and apply live to a running watcher[/dim]\n")
 
             locked_elsewhere = status.lock_holder_pid is not None and not status.monitoring
@@ -455,7 +460,8 @@ class StickiesTUI:
             self.pause()
             return
         self.console.print("[dim]Point at the vault (or any folder); the mirror is created inside it "
-                           f"as '{DEFAULT_SUBFOLDER}/' - change that on the output's screen.[/dim]")
+                           f"as '{DEFAULT_SUBFOLDER}/' ({{machine}} = this Mac's label, Settings > 7) "
+                           "- change that on the output's screen.[/dim]")
         self.console.print("[dim]markdown = annotated .md mirror for Obsidian etc.; "
                            "backup = verbatim restorable copy of the notes.[/dim]")
         kind = self.ask("Type", choices=list(OUTPUT_TYPES), default="markdown")

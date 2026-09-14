@@ -57,7 +57,11 @@ ON_DELETE_ALIASES = {"tombstone": "archive"}
 CONVERTER_CHOICES = ("auto", "textutil", "pandoc", "text")
 FLAVOR_CHOICES = ("generic", "obsidian", "floating-sticky-notes", "sticky-notes",
                   "colorful-stickynotes")
-DEFAULT_SUBFOLDER = "Synced_from_Stickies"
+# Per-machine by default: Stickies do not sync, so a vault shared between
+# Macs holds each Mac's notes separately (and slug-style names never
+# collide across machines). Pin machine_label so the folder is a name you
+# chose, not a hostname that might change.
+DEFAULT_SUBFOLDER = "Synced_from_Stickies/{machine}"
 
 # One block per mirror folder. Every key is optional in the file; missing
 # ones take these defaults. `name` is the handle used by --set NAME.KEY and
