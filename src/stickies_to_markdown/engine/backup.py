@@ -48,10 +48,24 @@ import subprocess
 from stickies_to_markdown.engine.events import Event
 from stickies_to_markdown.engine.logsetup import get_logger
 from stickies_to_markdown.engine.stickies import STATE_FILENAME
+from stickies_to_markdown.engine.writer import write_root_about, ROOT_ABOUT_VERSION
 
 
 DELETED_DIR = "_deleted"
 README_NAME = "_About this backup (how to restore).md"
+BACKUP_ROOT_ABOUT = """# Stickies backups - one folder per Mac
+
+Each folder here is a **verbatim, restorable backup of Apple Stickies on
+one Mac**, maintained by Stickies-to-Markdown. Stickies do not sync between
+Macs, so every Mac gets its own folder, named by a stable machine id that
+survives renaming the computer; the `_About` note inside each folder says
+which Mac it is and how to restore.
+
+- `.noindex` in the parent folder name keeps Spotlight out of all of this.
+- Each Mac maintains only its own folder and never touches another's.
+- This note is shared and maintained by the tool; it changes only when the
+  tool's wording does.
+"""
 SNAPSHOT_MARKER = "stickies-to-markdown backup"
 SNAPSHOT_PREFIX = "Stickies_backup_"
 _STAMP_FMT = "%Y%m%d-%H%M%S"
@@ -288,8 +302,16 @@ class BackupWriter:
         if self.target.get("replica", True):
             if self._sync_state_file():
                 actions.append("state file replicated")
-            if self.target.get("readme_note", True) and self._write_readme():
-                actions.append("wrote readme")
+            if self.target.get("readme_note", True):
+                if self._write_readme():
+                    actions.append("wrote readme")
+                raw = self.target.data.get("subfolder")
+                from stickies_to_markdown.engine.config import DEFAULT_BACKUP_SUBFOLDER
+                raw = DEFAULT_BACKUP_SUBFOLDER if raw is None else str(raw)
+                if "{machine" in raw and os.path.isdir(os.path.dirname(self.output_dir)):
+                    if write_root_about(os.path.dirname(self.output_dir), BACKUP_ROOT_ABOUT,
+                                        ROOT_ABOUT_VERSION, None, False, self.dry_run, self.logger):
+                        actions.append("wrote root about")
         if self.target.get("snapshots", False):
             actions += self.maybe_snapshot(force=force_snapshot, ignore_quiet=ignore_quiet)
         return actions

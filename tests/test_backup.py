@@ -64,6 +64,10 @@ def test_replica_is_verbatim_and_idempotent():
         ok &= check((box.replica / README_NAME).is_file() and
                     "restore-from" in (box.replica / README_NAME).read_text(encoding="utf-8"),
                     "readme with restore instructions", "")
+        from stickies_to_markdown.engine.writer import ROOT_ABOUT_NAME
+        root_note = box.replica.parent / ROOT_ABOUT_NAME
+        ok &= check(root_note.is_file() and box.config.machine_id() not in root_note.read_text(encoding="utf-8"),
+                    "machine-agnostic root note at the .noindex parent", "")
         src = box.container / "77777777-ABAB-4ABA-8ABA-777777777777.rtfd" / "TXT.rtf"
         dst = box.replica / "77777777-ABAB-4ABA-8ABA-777777777777.rtfd" / "TXT.rtf"
         ok &= check(int(src.stat().st_mtime) == int(dst.stat().st_mtime), "mtimes preserved", "")

@@ -201,6 +201,14 @@ happens on deletion under this output's policy, and where settings live.
 It is maintained like a mirror file (rewritten when the policy changes,
 read-only, marker-checked, removed by `--purge-mirror`) and never indexed
 as a note. `readme_note: false` on the output turns it off.
+
+With the per-machine layout there is a second note one level up, at the
+shared parent of the machine folders (`_About these folders (one per
+Mac).md`, and its counterpart at the backup `.noindex` root). Because that
+folder is written by every Mac, the note is deliberately machine-agnostic
+and carries an `about-version`: a Mac rewrites it only when it is missing
+or older than the text the Mac knows, so machines on different tool
+versions converge on the newer text instead of flapping through Dropbox.
 Desktop Sticky Notes stores colors in its own settings by file path, so
 no front matter can reach it. One caveat: plugins that *write* front matter
 back into a note (Colorful StickyNotes adds its own id on first open) will

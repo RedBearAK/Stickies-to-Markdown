@@ -479,6 +479,49 @@ def test_no_vault_no_snippet_and_generic_flavor_no_snippet():
     return ok
 
 
+def test_root_about_note_shared_and_never_flaps():
+    from stickies_to_markdown.engine.writer import ROOT_ABOUT_NAME, ROOT_ABOUT_VERSION
+    with Sandbox(machine_label="mac-a", machine_id="aaaaaaaa") as box:
+        _export(box)
+        root_note = box.named / ROOT_ABOUT_NAME
+        ok = check(root_note.is_file(), "root note written at the shared parent of the per-machine folders", "")
+        text = root_note.read_text(encoding="utf-8")
+        keys, body = split_front_matter(text)
+        ok &= check(keys.get("about-version") == str(ROOT_ABOUT_VERSION) and "mac-a" not in text
+                    and "aaaaaaaa" not in text, "content is machine-agnostic and versioned", f"{keys}")
+        ok &= check(stat.S_IMODE(os.stat(root_note).st_mode) == 0o444, "read-only like the mirror", "")
+        first = root_note.read_bytes()
+        # Mac B exports into the same shared parent: must not rewrite it.
+        box.config.update({"machine_label": "mac-b", "machine_id": "bbbbbbbb"})
+        _export(box)
+        ok &= check(root_note.read_bytes() == first, "second machine leaves the identical note alone", "flapped")
+        ok &= check((box.named / "bbbbbbbb").is_dir() and (box.named / "aaaaaaaa").is_dir(),
+                    "each machine has its own folder beside it", "")
+        # An older tool wrote version 0: it gets upgraded once, then stays.
+        root_note.chmod(0o644)
+        root_note.write_text(text.replace(f"about-version: {ROOT_ABOUT_VERSION}", "about-version: 0"),
+                             encoding="utf-8")
+        _export(box)
+        ok &= check(root_note.read_bytes() == first, "lower version is rewritten to the current text", "")
+        # A newer tool's note (higher version) is never downgraded.
+        root_note.chmod(0o644)
+        root_note.write_text(text.replace(f"about-version: {ROOT_ABOUT_VERSION}",
+                                          f"about-version: {ROOT_ABOUT_VERSION + 5}") + "future text\n",
+                             encoding="utf-8")
+        _export(box)
+        ok &= check("future text" in root_note.read_text(encoding="utf-8"),
+                    "higher version wins: never downgraded by an older tool", "downgraded")
+        return ok
+
+
+def test_flat_layout_has_no_root_note():
+    from stickies_to_markdown.engine.writer import ROOT_ABOUT_NAME
+    with Sandbox(subfolder="Synced_from_Stickies") as box:
+        _export(box)
+        return check(not (box.root / ROOT_ABOUT_NAME).exists() and not (box.named / ROOT_ABOUT_NAME).exists(),
+                     "flat (single-machine) layout: no root note anywhere", "")
+
+
 def test_custom_deleted_dir_and_collision():
     with Sandbox(deleted_dir="Deleted_Stickies") as box:
         _export(box)
@@ -619,7 +662,8 @@ if __name__ == "__main__":
              test_plugin_flavors_from_source, test_subfolder_blank_writes_directly,
              test_slug_style_collision_and_rename, test_machine_identity_isolates_shared_folders,
              test_machine_placeholder_in_subfolder, test_shared_folder_without_machine_subfolder_warns,
-             test_readme_note_maintained_and_sorted_first,
+             test_readme_note_maintained_and_sorted_first, test_root_about_note_shared_and_never_flaps,
+             test_flat_layout_has_no_root_note,
              test_obsidian_snippet_installed_into_vault, test_no_vault_no_snippet_and_generic_flavor_no_snippet,
              test_custom_deleted_dir_and_collision, test_exclusion_by_color_is_reactive,
              test_exclusion_by_title_regex_with_archive, test_attachments_follow_the_file,

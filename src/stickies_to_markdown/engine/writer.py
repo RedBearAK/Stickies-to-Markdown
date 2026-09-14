@@ -47,6 +47,9 @@ MACHINE_ID_KEY = "source-machine-id"
 DELETED_KEY = "deleted-from-stickies"
 README_KEY = "mirror-readme"
 README_NAME = "_About these notes (read-only mirror).md"
+ROOT_ABOUT_NAME = "_About these folders (one per Mac).md"
+ROOT_ABOUT_VERSION_KEY = "about-version"
+ROOT_ABOUT_VERSION = 1      # bump when the root note's TEXT changes; that is what stops flapping
 ATTACHMENTS_DIR = "attachments"
 CONFLICTS_DIR = "_conflicts"
 
@@ -97,6 +100,48 @@ def split_front_matter(text):
             key, _, value = line.partition(":")
             keys[key.strip()] = _unquote(value.strip())
     return keys, text[end + 5:]
+
+
+def write_root_about(root, body, version, extra_keys=None, read_only=True, dry_run=False, logger=None):
+    """
+    A note at the SHARED parent of the per-machine folders, written by
+    whichever Mac gets there. To keep it from flapping between machines
+    its content depends only on `version` (never on config or machine),
+    and a Mac rewrites it only when the file is missing or carries a lower
+    version - the higher version wins and then nobody touches it. Returns
+    True if written.
+    """
+    logger = logger or get_logger()
+    path = os.path.join(root, ROOT_ABOUT_NAME)
+    keys = {MARKER_KEY: MARKER_VALUE, README_KEY: True, ROOT_ABOUT_VERSION_KEY: version}
+    keys.update(extra_keys or {})
+    rendered = render_front_matter(keys) + "\n" + body
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            existing = handle.read()
+    except FileNotFoundError:
+        existing = None
+    if existing is not None:
+        found, _ = split_front_matter(existing)
+        if found.get(MARKER_KEY) != MARKER_VALUE:
+            logger.warning(f"'{path}': exists but is not ours; left alone")
+            return False
+        try:
+            if int(found.get(ROOT_ABOUT_VERSION_KEY, 0)) >= version:
+                return False                    # same or newer text already there
+        except ValueError:
+            pass
+    if not dry_run:
+        fd, temp = tempfile.mkstemp(prefix=".s2m.", dir=root)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(rendered)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if read_only:
+            os.chmod(temp, 0o444)
+        os.replace(temp, path)
+    logger.info(f"{'Would write' if dry_run else 'Wrote'} '{ROOT_ABOUT_NAME}' in '{root}'")
+    return True
 
 
 def _merge_key(lines, key, value):
@@ -166,6 +211,21 @@ def _strip_volatile(text):
     that file on every save, including a color change or a window move,
     so it would churn every mirror file on every attribute fiddle)."""
     return re.sub(r"^(synced-at|modified):.*$", "", text, flags=re.MULTILINE)
+
+
+MIRROR_ROOT_ABOUT = """# Synced from Stickies - one folder per Mac
+
+Each folder here holds the **read-only Markdown mirror of Apple Stickies on
+one Mac**, kept in sync by Stickies-to-Markdown. Stickies do not sync
+between Macs, so every Mac gets its own folder, named by a stable machine
+id that survives renaming the computer; the `_About` note inside each
+folder says which Mac it is in plain words.
+
+- The files inside are mirrors: **edit the sticky, not the file.**
+- Each Mac maintains only its own folder and never touches another's.
+- This note is shared and maintained by the tool; it changes only when the
+  tool's wording does.
+"""
 
 
 class Writer:
@@ -296,6 +356,12 @@ class Writer:
             actions.append("shared folder warning")
         if self.target.get("readme_note", True):
             actions += self._write_readme()
+            if self._per_machine_layout():
+                extra = {"cssclasses": ["stickies-mirror"]} if \
+                    "obsidian" in parse_flavors(self.target.get("flavor", "generic")) else None
+                if write_root_about(os.path.dirname(self.output_dir), MIRROR_ROOT_ABOUT,
+                                    ROOT_ABOUT_VERSION, extra, self.read_only, self.dry_run, self.logger):
+                    actions.append("wrote root about")
         if self.target.get("obsidian_snippet", True) and \
                 "obsidian" in parse_flavors(self.target.get("flavor", "generic")):
             vault = obsidian.find_vault_root(self.output_dir)
@@ -305,6 +371,15 @@ class Writer:
                     self.logger.info(f"Obsidian ('{vault}'): {action}")
                 actions += taken
         return actions
+
+    def _per_machine_layout(self):
+        """True when the subfolder puts each Mac in its own folder, i.e. the
+        parent of output_dir is shared between machines."""
+        raw = self.target.data.get("subfolder")
+        raw = self.target.subfolder() if raw is None else str(raw)
+        from stickies_to_markdown.engine.config import DEFAULT_SUBFOLDER
+        raw = DEFAULT_SUBFOLDER if self.target.data.get("subfolder") is None else raw
+        return "{machine" in raw
 
     def _readme_text(self):
         flavors = parse_flavors(self.target.get("flavor", "generic"))
