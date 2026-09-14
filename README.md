@@ -156,7 +156,7 @@ Stickies keeps no history and does not sync. A **backup output** keeps a
 verbatim, restorable copy:
 
 ```
-stickies2md --add-backup safe=~/Dropbox/Backups      # replica in .../Stickies_backup.noindex/<machine>/
+stickies2md --add-backup safe=~/Dropbox/Backups      # replica in .../Stickies_backup.noindex/<machine-id>/
 stickies2md --set safe.snapshots=true                # plus a zip at most every 30 days
 stickies2md --set safe.replica=false                 # ...or ONLY the zips (text-only notes)
 stickies2md --snapshot-now                           # a zip right now
@@ -166,10 +166,11 @@ stickies2md --snapshot-now                           # a zip right now
   plus the state file. One file changes per edit, so a Dropbox or iCloud
   folder syncs deltas only and adds its own version history for free. A
   note deleted in Stickies moves to `_deleted/<date-time>/` in the replica
-  and is pruned after `keep_deleted_days` (30). The folder name ends in
-  `.noindex` so Spotlight skips the whole subtree; the replica carries a
-  note explaining what it is and how to restore.
-- **Snapshots** (default off): `Stickies_backup_<machine>_<date-time>.zip`
+  and is pruned after `keep_deleted_days` (30). The folder is named by the
+  machine's stable id (a hash of the hardware UUID), so it stays put if the
+  Mac is renamed; `.noindex` keeps Spotlight out of the subtree; the note
+  inside says which Mac it is in human terms and how to restore.
+- **Snapshots** (default off): `Stickies_backup_<machine-id>_<date-time>.zip`
   in the folder you named (`snapshot_dir` to change), written at most every
   `snapshot_every_days` (30), only when the notes changed since the last
   one and after `snapshot_quiet_seconds` (300) of no edits; pruned to the

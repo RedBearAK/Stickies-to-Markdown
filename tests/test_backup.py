@@ -54,8 +54,9 @@ def _replica_signature(box):
 def test_replica_is_verbatim_and_idempotent():
     with _backup_box() as box:
         counters = _export(box)
-        ok = check(box.replica == box.base / "Stickies_backup.noindex" / box.config.machine_label(),
-                   "replica in <named folder>/Stickies_backup.noindex/<machine>", str(box.replica))
+        ok = check(box.replica == box.base / "Stickies_backup.noindex" / box.config.machine_id(),
+                   "replica in <named folder>/Stickies_backup.noindex/<machine-id> (stable, not hostname)",
+                   str(box.replica))
         ok &= check(_replica_signature(box) == _container_signature(box),
                     "replica byte-identical to the container (packages + state file)", "differs")
         ok &= check(counters.converted == 7 and counters.errors == 0, "7 packages replicated",

@@ -299,7 +299,9 @@ class BackupWriter:
         text = f"""# Stickies backup - how to restore
 
 This folder is a **verbatim backup of Apple Stickies** on the Mac
-"{self.config.machine_label()}", maintained by Stickies-to-Markdown. Each
+"{self.config.machine_label()}" (machine id {self.config.machine_id()}, the
+folder name - it stays the same if the Mac is renamed), maintained by
+Stickies-to-Markdown. Each
 `<UUID>.rtfd` is one note exactly as Stickies stores it (text plus
 attachments); `.SavedStickiesState` holds colors and window positions.
 Notes deleted in Stickies are kept under `_deleted/<date-time>/` for
@@ -347,8 +349,8 @@ maintained by the tool; edits are overwritten.
             return found
         for name in names:
             match = _SNAPSHOT_RE.match(name)
-            if not match:
-                continue
+            if not match or match.group("machine") != self.config.machine_id():
+                continue                            # another Mac's series in a shared folder
             path = os.path.join(folder, name)
             try:
                 with zipfile.ZipFile(path) as archive:
@@ -392,11 +394,13 @@ maintained by the tool; edits are overwritten.
         return ["wrote snapshot"] + self._prune_snapshots()
 
     def _write_snapshot(self, source, folder, digest):
-        name = f"{SNAPSHOT_PREFIX}{self.config.machine_label()}_{_stamp()}.zip"
+        # Stable id in the file name (label in the zip comment): renaming the
+        # Mac must not orphan its own snapshot series for pruning purposes.
+        name = f"{SNAPSHOT_PREFIX}{self.config.machine_id()}_{_stamp()}.zip"
         path = os.path.join(folder, name)
         while os.path.exists(path):               # never overwrite: wait for the next second
             time.sleep(0.2)
-            name = f"{SNAPSHOT_PREFIX}{self.config.machine_label()}_{_stamp()}.zip"
+            name = f"{SNAPSHOT_PREFIX}{self.config.machine_id()}_{_stamp()}.zip"
             path = os.path.join(folder, name)
         comment = json.dumps({"marker": SNAPSHOT_MARKER, "machine": self.config.machine_label(),
                               "machine_id": self.config.machine_id(), "corpus_hash": digest,

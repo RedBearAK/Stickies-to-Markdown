@@ -122,7 +122,7 @@ def test_backup_output_from_menu():
         t = fresh.target("bk")
         ok = check(t is not None and t.type == "backup" and t.get("snapshots") is True,
                    "backup output added and its snapshot toggle set from its own screen", f"{t}")
-        ok &= check(t.output_dir().endswith(os.path.join("Stickies_backup.noindex", fresh.machine_label())),
+        ok &= check(t.output_dir().endswith(os.path.join("Stickies_backup.noindex", fresh.machine_id())),
                     "backup subfolder default applied", t.output_dir())
         ok &= check("Backup output 'bk'" in out.getvalue(), "backup screen rendered", "")
         return ok

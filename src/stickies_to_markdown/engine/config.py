@@ -63,7 +63,10 @@ DEFAULT_SUBFOLDER = "Synced_from_Stickies"
 # ones take these defaults. `name` is the handle used by --set NAME.KEY and
 # the menu; `output_dir` is the only one that must be set.
 OUTPUT_TYPES = ("markdown", "backup")
-DEFAULT_BACKUP_SUBFOLDER = "Stickies_backup.noindex/{machine}"
+# Keyed on the stable machine id (hardware UUID hash), not the hostname:
+# a backup folder must stay put when the Mac is renamed. The readme inside
+# names the machine in human terms.
+DEFAULT_BACKUP_SUBFOLDER = "Stickies_backup.noindex/{machine_id}"
 
 TARGET_DEFAULTS = {
     "name": "",
