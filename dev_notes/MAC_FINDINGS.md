@@ -215,6 +215,12 @@ when a purple was requested.) The state file also carries `ControlColor`,
 - [x] **Typing autosave interval** - ~10-12 s idle debounce (one run).
 - [x] **Color calibration** - all six.
 - [x] **Bold/italic through textutil** - verified.
+- [ ] **Restore adoption** (backup output, 2026-09-08): does Stickies show
+      a restored package that the restored `.SavedStickiesState` does not
+      list? Test: `--add-backup`, `--once`, delete a throwaway note in
+      Stickies, quit Stickies, `--restore-from <replica> --yes`, relaunch.
+      If the note is missing, the restore must also merge the state file
+      (or Stickies re-scans the folder and it just works).
 - [ ] **TCC service name** for `tccutil reset` (see Permissions).
 - [ ] **Real fixtures** (step 8 with `--capture`, then sanitise).
 

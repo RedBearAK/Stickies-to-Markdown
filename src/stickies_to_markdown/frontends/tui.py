@@ -26,7 +26,8 @@ from rich.console import Console, Group
 from stickies_to_markdown._version import __version__
 from stickies_to_markdown.engine import Config, Engine, EngineError
 from stickies_to_markdown.engine.config import (
-    FILENAME_STYLES, ON_DELETE_CHOICES, CONVERTER_CHOICES, FLAVOR_CHOICES, DEFAULT_SUBFOLDER)
+    FILENAME_STYLES, ON_DELETE_CHOICES, CONVERTER_CHOICES, FLAVOR_CHOICES, DEFAULT_SUBFOLDER,
+    OUTPUT_TYPES, DEFAULT_BACKUP_SUBFOLDER)
 from stickies_to_markdown.engine.stickies import COLOR_NAMES, container_readable
 from stickies_to_markdown.engine.convert import pandoc_available
 from stickies_to_markdown.engine.emitters import parse_flavors, EmitterError
@@ -295,13 +296,16 @@ class StickiesTUI:
             letters = [chr(ord("A") + i) for i in range(len(targets))]
             table = Table(show_header=False, box=None, padding=(0, 2))
             for letter, t in zip(letters, targets):
-                table.add_row(f"[bold]{letter}[/bold]", t.name,
-                              t.output_dir() or "[red]no folder[/red]",
-                              f"[dim]{t.get('flavor')}, {t.get('filename_style')}, "
-                              f"on delete {t.on_delete()}[/dim]")
+                if t.type == "backup":
+                    detail = ("replica" if t.get("replica", True) else "no replica") + \
+                             (", snapshots" if t.get("snapshots") else "")
+                else:
+                    detail = f"{t.get('flavor')}, {t.get('filename_style')}, on delete {t.on_delete()}"
+                table.add_row(f"[bold]{letter}[/bold]", f"{t.name} [dim]({t.type})[/dim]",
+                              t.output_dir() or "[red]no folder[/red]", f"[dim]{detail}[/dim]")
             if not targets:
                 table.add_row("", "[red]none - add one below[/red]", "", "")
-            table.add_row("[bold]+[/bold]", "Add an output", "", "")
+            table.add_row("[bold]+[/bold]", "Add an output (Markdown mirror or verbatim backup)", "", "")
             if targets:
                 table.add_row("[bold]-[/bold]", "Remove an output", "", "")
             self.console.print(table)
@@ -414,6 +418,23 @@ class StickiesTUI:
             foreign += 1
         return f"it already holds {foreign} item(s) that are not ours" if foreign else ""
 
+    def _ensure_folder_exists(self, folder):
+        """The tool never creates the folder an output names (an unmounted
+        volume's mount point must not be planted locally); creating it here,
+        on purpose, at configuration time, is the right moment."""
+        expanded = os.path.expanduser(folder)
+        if os.path.isdir(expanded):
+            return True
+        self.console.print(f"[yellow]'{folder}' does not exist.[/yellow] The tool will not create "
+                           "it later (a missing folder is treated as an unmounted volume).")
+        if Confirm.ask("Create it now?", default=True, console=self.console):
+            try:
+                os.makedirs(expanded)
+                return True
+            except OSError as error:
+                self.console.print(f"[red]{error}[/red]")
+        return False
+
     def _confirm_folder(self, folder):
         reason = self._looks_like_someone_elses_folder(folder)
         if not reason:
@@ -435,13 +456,22 @@ class StickiesTUI:
             return
         self.console.print("[dim]Point at the vault (or any folder); the mirror is created inside it "
                            f"as '{DEFAULT_SUBFOLDER}/' - change that on the output's screen.[/dim]")
+        self.console.print("[dim]markdown = annotated .md mirror for Obsidian etc.; "
+                           "backup = verbatim restorable copy of the notes.[/dim]")
+        kind = self.ask("Type", choices=list(OUTPUT_TYPES), default="markdown")
+        if kind == "backup":
+            self.console.print(f"[dim]The replica is created inside the folder as "
+                               f"'{DEFAULT_BACKUP_SUBFOLDER}/' (Spotlight skips .noindex).[/dim]")
         folder = self._ask_folder("Folder", "")
-        if not folder:
+        if not folder or not self._ensure_folder_exists(folder):
             return
-        flavor = self._ask_flavors("generic")
-        target = self.config.add_target(name, folder, flavor=flavor)
+        if kind == "backup":
+            target = self.config.add_target(name, folder, type="backup")
+        else:
+            flavor = self._ask_flavors("generic")
+            target = self.config.add_target(name, folder, flavor=flavor)
         self.console.print(f"[green]Added output '{name}'.[/green] Files will go to "
-                           f"{target.output_dir()} (created on first export).")
+                           f"'{target.output_dir()}' (created on first export).")
         self.pause()
 
     def _ask_flavors(self, current):
@@ -466,6 +496,8 @@ class StickiesTUI:
         self.pause()
 
     def output_settings(self, name):
+        if self.config.target(name) is not None and self.config.target(name).type == "backup":
+            return self.backup_settings(name)
         while True:
             self.refresh_state()
             t = self.config.target(name)
@@ -521,6 +553,77 @@ class StickiesTUI:
                 continue
             getattr(self, f"_set_o{choice}")(name)
 
+    def backup_settings(self, name):
+        while True:
+            self.refresh_state()
+            t = self.config.target(name)
+            if t is None:
+                return
+            self.console.clear()
+            self.console.print(f"\n[bold]Backup output '{name}'[/bold]  [dim](saved on change)[/dim]\n")
+            yes = lambda v: "yes" if v else "no"   # noqa: E731
+            rows = [
+                ("1", "Folder", t.base_dir() or "[red]not set[/red]"),
+                ("2", "Subfolder for the replica (blank = none)", t.subfolder() or "[yellow]none[/yellow]"),
+                ("3", "-> replica goes to", t.output_dir() or "[red]-[/red]"),
+                ("4", "Keep a replica tree", yes(t.get("replica", True))),
+                ("5", "Keep deleted notes for (days, 0 = forever)", t.get("keep_deleted_days")),
+                ("6", "Write snapshot zips", yes(t.get("snapshots"))),
+                ("7", "  at most every (days)", t.get("snapshot_every_days")),
+                ("8", "  after quiet (seconds)", t.get("snapshot_quiet_seconds")),
+                ("9", "  keep newest (0 = all)", t.get("keep_snapshots")),
+                ("10", "  zips go to", t.snapshot_dir() or "[dim](the folder above)[/dim]"),
+                ("11", "Maintain the restore-instructions note", yes(t.get("readme_note", True))),
+                ("12", "Rename this output", name),
+            ]
+            table = Table(show_header=False, box=None, padding=(0, 2))
+            for number, label, value in rows:
+                table.add_row(f"[bold]{number}[/bold]", label, str(value))
+            self.console.print(table)
+            self.console.print("\n[dim]Restore: stickies2md --restore-from '<replica folder or zip>' --yes  "
+                               "(Stickies quit). Snapshot now: stickies2md --snapshot-now[/dim]")
+            self.console.print("\n0. Back\n")
+            choice = self.ask("Change which", choices=[r[0] for r in rows if r[0] != "3"] + ["0"], default="0")
+            if choice == "0":
+                return
+            if choice == "1":
+                value = self._ask_folder("Folder", t.get("output_dir") or "")
+                if value and self._ensure_folder_exists(value):
+                    self.config.set_target(name, "output_dir", value)
+            elif choice == "2":
+                value = self.ask("Subfolder ('-' for none)", default=t.subfolder() or "-").strip()
+                self.config.set_target(name, "subfolder", "" if value in ("-", "") else value)
+            elif choice == "4":
+                self._set_target_bool(name, "replica", "Keep a verbatim replica tree?")
+            elif choice in ("5", "7", "8", "9"):
+                key = {"5": "keep_deleted_days", "7": "snapshot_every_days",
+                       "8": "snapshot_quiet_seconds", "9": "keep_snapshots"}[choice]
+                raw = self.ask(key, default=str(t.get(key)))
+                try:
+                    self.config.set_target(name, key, int(float(raw)))
+                except ValueError:
+                    self.console.print("[red]Not a number, unchanged.[/red]")
+                    self.pause()
+            elif choice == "6":
+                self._set_target_bool(name, "snapshots", "Write timestamped snapshot zips?")
+            elif choice == "10":
+                value = self.ask("Snapshot folder (blank = the output folder)",
+                                 default=t.get("snapshot_dir") or "")
+                if value.strip() and not self._ensure_folder_exists(value.strip()):
+                    continue
+                self.config.set_target(name, "snapshot_dir", value.strip())
+            elif choice == "11":
+                self._set_target_bool(name, "readme_note", "Maintain the restore-instructions note?")
+            elif choice == "12":
+                new_name = self.ask("New name", default=name).strip()
+                if new_name and new_name != name:
+                    try:
+                        self.config.rename_target(name, new_name)
+                        name = new_name
+                    except ValueError as error:
+                        self.console.print(f"[red]{error}[/red]")
+                        self.pause()
+
     def _set_target_choice(self, name, key, choices, prompt):
         value = self.ask(prompt, choices=list(choices), default=str(self.config.target(name).get(key)))
         self.config.set_target(name, key, value)
@@ -532,7 +635,7 @@ class StickiesTUI:
     def _set_o1(self, name):
         target = self.config.target(name)
         value = self._ask_folder("Folder", target.get("output_dir") or "")
-        if value and (target.subfolder() or self._confirm_folder(value)):
+        if value and self._ensure_folder_exists(value) and (target.subfolder() or self._confirm_folder(value)):
             self.config.set_target(name, "output_dir", value)
             if not os.path.isdir(os.path.expanduser(value)):
                 self.console.print("[dim]It will be created on first export.[/dim]")

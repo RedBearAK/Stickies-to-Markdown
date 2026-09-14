@@ -235,6 +235,7 @@ def test_two_outputs_with_different_settings():
     with Sandbox(flavor="obsidian", filename_style="uuid",
                  exclude_colors=["gray"], on_delete="mark") as box:
         plain_base = box.root / "plain"
+        plain_base.mkdir()
         box.config.add_target("plain", str(plain_base), flavor="generic", on_delete="archive")
         plain = Path(box.config.target("plain").output_dir())
         ok0 = check(plain == plain_base / "Synced_from_Stickies",
@@ -486,7 +487,6 @@ def test_container_never_touched():
 
 def test_unmarked_file_is_never_touched():
     with Sandbox() as box:
-        box.output.mkdir()
         foreign = box.output / "grocery-list--11111111.md"
         foreign.write_text("my own file, hands off\n", encoding="utf-8")
         counters = _export(box)

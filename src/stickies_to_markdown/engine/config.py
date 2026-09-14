@@ -62,14 +62,23 @@ DEFAULT_SUBFOLDER = "Synced_from_Stickies"
 # One block per mirror folder. Every key is optional in the file; missing
 # ones take these defaults. `name` is the handle used by --set NAME.KEY and
 # the menu; `output_dir` is the only one that must be set.
+OUTPUT_TYPES = ("markdown", "backup")
+DEFAULT_BACKUP_SUBFOLDER = "Stickies_backup.noindex/{machine}"
+
 TARGET_DEFAULTS = {
     "name": "",
+    # "markdown": annotated .md mirror (all keys below).
+    # "backup":   verbatim, restorable copy of the container - a replica
+    #             tree and/or timestamped zip snapshots (keys marked [backup]).
+    "type": "markdown",
     "output_dir": "",
     # The mirror lives in output_dir/<subfolder>, created on first export,
     # so pointing an output at a vault or Documents never spills files into
     # it. "" writes directly into output_dir. "{machine}" expands to this
-    # Mac's label, for two Macs mirroring into one shared folder.
-    "subfolder": DEFAULT_SUBFOLDER,
+    # Mac's label, for two Macs mirroring into one shared folder. None =
+    # the default for the block's type (Synced_from_Stickies, or
+    # Stickies_backup.noindex/{machine} for backups).
+    "subfolder": None,
     "flavor": "generic",                    # one or more of FLAVOR_CHOICES, comma-separated
     "filename_style": "slug-uuid",          # or "uuid"
     "on_delete": "archive",                 # mark | delete | keep
@@ -86,6 +95,14 @@ TARGET_DEFAULTS = {
     # With the "obsidian" flavor: install and enable the CSS snippet in the
     # enclosing vault's .obsidian/snippets/ (found by walking up).
     "obsidian_snippet": True,
+    # --- [backup] ---
+    "replica": True,                  # keep a verbatim copy of every package + state file
+    "keep_deleted_days": 30,          # replica: tombstoned packages pruned after this (0 = forever)
+    "snapshots": False,               # write timestamped zips as well (or instead: replica false)
+    "snapshot_every_days": 30,        # at most one snapshot per this many days...
+    "snapshot_quiet_seconds": 300,    # ...and only after the corpus has been quiet this long
+    "keep_snapshots": 0,              # prune to the newest N (0 = keep all)
+    "snapshot_dir": "",               # where zips go; "" = the folder named in output_dir
 }
 
 # Keys that used to live at the top level of a single-output config.
@@ -173,9 +190,15 @@ class OutputTarget:
         value = self.data.get("output_dir") or ""
         return os.path.expanduser(value) if value else ""
 
+    @property
+    def type(self):
+        return str(self.data.get("type") or "markdown")
+
     def subfolder(self):
         value = self.data.get("subfolder")
-        value = DEFAULT_SUBFOLDER if value is None else str(value).strip().strip("/")
+        if value is None:
+            value = DEFAULT_BACKUP_SUBFOLDER if self.type == "backup" else DEFAULT_SUBFOLDER
+        value = str(value).strip().strip("/")
         return (value.replace("{machine}", self.machine_label)
                      .replace("{machine_id}", self.machine_id))
 
@@ -200,8 +223,12 @@ class OutputTarget:
         value = os.path.expanduser(str(self.data.get("deleted_dir") or "_deleted"))
         return value if os.path.isabs(value) else os.path.join(self.output_dir(), value)
 
+    def snapshot_dir(self):
+        value = os.path.expanduser(str(self.data.get("snapshot_dir") or "").strip())
+        return value or self.base_dir()
+
     def __repr__(self):
-        return f"OutputTarget({self.name!r}, {self.output_dir()!r})"
+        return f"OutputTarget({self.name!r}, {self.type}, {self.output_dir()!r})"
 
 
 class Config:

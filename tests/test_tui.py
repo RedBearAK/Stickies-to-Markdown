@@ -51,7 +51,8 @@ def test_settings_change_persists():
         # 1 settings -> A (output "default") -> 4 on_delete -> mark -> 0 back
         #   -> 5 dry run -> yes -> + add output "plain" -> folder -> generic -> 0 -> Q
         other = str(box.root / "plain")
-        tui, _ = _tui(box, ["1", "A", "4", "mark", "0", "5", "y", "+", "plain", other,
+        os.makedirs(other)
+        tui, _ = _tui(box, ["1", "A", "4", "mark", "0", "5", "y", "+", "plain", "markdown", other,
                             "generic", "0", "Q"])
         tui.show_menu()
         from stickies_to_markdown.engine import Config
@@ -109,10 +110,28 @@ def test_install_screen_reports_state_and_installs():
             installer.default_bin_dir = saved
 
 
+def test_backup_output_from_menu():
+    with Sandbox() as box:
+        folder = str(box.root / "backups")
+        os.makedirs(folder)
+        # + add -> name -> type backup -> folder -> (per-output) B -> 6 snapshots yes -> 0 -> 0 -> Q
+        tui, out = _tui(box, ["1", "+", "bk", "backup", folder, "B", "6", "y", "0", "0", "Q"])
+        tui.show_menu()
+        from stickies_to_markdown.engine import Config
+        fresh = Config(config_file=box.config.config_file)
+        t = fresh.target("bk")
+        ok = check(t is not None and t.type == "backup" and t.get("snapshots") is True,
+                   "backup output added and its snapshot toggle set from its own screen", f"{t}")
+        ok &= check(t.output_dir().endswith(os.path.join("Stickies_backup.noindex", fresh.machine_label())),
+                    "backup subfolder default applied", t.output_dir())
+        ok &= check("Backup output 'bk'" in out.getvalue(), "backup screen rendered", "")
+        return ok
+
+
 if __name__ == "__main__":
     tests = [test_menu_renders_and_quits_cleanly, test_settings_change_persists,
              test_export_now_and_views, test_start_stop_from_menu,
-             test_install_screen_reports_state_and_installs]
+             test_install_screen_reports_state_and_installs, test_backup_output_from_menu]
     exit(0 if run_suite("tui tests", tests) else 1)
 
 

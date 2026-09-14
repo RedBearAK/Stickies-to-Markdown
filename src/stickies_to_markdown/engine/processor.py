@@ -12,6 +12,7 @@ import threading
 
 from stickies_to_markdown.engine import stickies
 from stickies_to_markdown.engine.writer import Writer
+from stickies_to_markdown.engine.backup import BackupWriter
 from stickies_to_markdown.engine.events import Event
 from stickies_to_markdown.engine.convert import (
     convert, ConversionError, first_content_line)
@@ -94,7 +95,8 @@ class NoteProcessor:
         self.events = events
         self.counters = counters or Counters()
         self.logger = logger or get_logger()
-        self.writers = [Writer(config, target, events, self.logger)
+        self.writers = [(BackupWriter if target.type == "backup" else Writer)(
+                            config, target, events, self.logger)
                         for target in config.targets() if target.output_dir()]
         if not self.writers:
             raise ValueError("no output configured (add one: stickies2md > Settings)")
@@ -130,16 +132,26 @@ class NoteProcessor:
         output. Returns a dict writer-name -> Event kind ("converted",
         "unchanged", "excluded", "error"); see summarize_kinds().
         """
-        wanted = [w for w in self.writers
+        backups = [w for w in self.writers if isinstance(w, BackupWriter)]
+        markdown_writers = [w for w in self.writers if not isinstance(w, BackupWriter)]
+        wanted = [w for w in markdown_writers
                   if not self.is_excluded(note, w.target, logger=self.logger)]
-        results = {w.name: "excluded" for w in self.writers if w not in wanted}
-        if not wanted:
-            return results
-        if settle and not wait_until_stable(
+        results = {w.name: "excluded" for w in markdown_writers if w not in wanted}
+        if settle and (wanted or backups) and not wait_until_stable(
                 note.rtfd_path, float(self.config.get("settle_seconds", 1.0))):
             self.events.put(Event("error", note.rtfd_path, "never settled"))
             self.counters.bump("errors")
-            return {**results, **{w.name: "error" for w in wanted}}
+            return {**results, **{w.name: "error" for w in wanted + backups}}
+        for writer in backups:                      # verbatim: nothing to convert, no exclusions
+            try:
+                kind = writer.export_note(note)
+            except Exception as error:      # noqa: BLE001 - one output must not stop the rest
+                self.logger.error(f"Output '{writer.name}': {type(error).__name__}: {error}")
+                kind = "error"
+            results[writer.name] = kind
+            self.counters.bump(kind if kind in ("converted", "unchanged") else "errors")
+        if not wanted:
+            return results
         try:
             markdown, attachments, body_format = convert(
                 note.rtfd_path, self.config.get("converter", "auto"), self.logger,
@@ -154,7 +166,12 @@ class NoteProcessor:
             if self.is_excluded(note, writer.target, markdown, self.logger):
                 results[writer.name] = "excluded"
                 continue
-            kind = writer.export_note(note, markdown, attachments, body_format)
+            try:
+                kind = writer.export_note(note, markdown, attachments, body_format)
+            except Exception as error:      # noqa: BLE001 - e.g. the volume vanished mid-write
+                self.logger.error(f"Output '{writer.name}': {type(error).__name__}: {error}")
+                self.events.put(Event("error", writer.output_dir, f"{type(error).__name__}: {error}"))
+                kind = "error"
             results[writer.name] = kind
             self.counters.bump(kind if kind in ("converted", "unchanged") else "errors")
         return results
@@ -197,14 +214,17 @@ class NoteProcessor:
                     excluded[name].add(note.uuid)
         for writer in self.writers:
             live = set(notes.keys()) - excluded[writer.name]
-            removed = writer.handle_deletions(live, excluded[writer.name])
-            self.counters.bump("deleted", len(removed) - len(writer.last_excluded))
-            self.counters.bump("excluded", len(writer.last_excluded))
             try:
-                writer.maintain_extras()
-            except OSError as error:
-                self.logger.error(f"{writer.name}: extras: {error}")
-                self.events.put(Event("error", writer.output_dir, f"extras: {error}"))
+                removed = writer.handle_deletions(live, excluded[writer.name])
+                self.counters.bump("deleted", len(removed) - len(writer.last_excluded))
+                self.counters.bump("excluded", len(writer.last_excluded))
+                if isinstance(writer, BackupWriter):
+                    writer.maintain_extras(ignore_quiet=True)     # a full export IS a quiet point
+                else:
+                    writer.maintain_extras()
+            except Exception as error:      # noqa: BLE001 - one output must not stop the rest
+                self.logger.error(f"Output '{writer.name}': {type(error).__name__}: {error}")
+                self.events.put(Event("error", writer.output_dir, f"{type(error).__name__}: {error}"))
         self.events.put(Event("scanned", stickies_dir,
                               f"{len(notes)} notes; {self.counters.as_dict()}"))
         self.logger.info(f"Export complete: {self.counters.as_dict()}")

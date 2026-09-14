@@ -46,6 +46,9 @@ class Sandbox:
         self.config_dir = self.root / "config"
         self.container.mkdir()
         self.config_dir.mkdir()
+        # The folder an output NAMES must exist (the tool never creates it -
+        # see Writer.available()); only its own subfolder is created.
+        self.output.mkdir()
 
         for item in sorted(FIXTURES.iterdir()):
             if item.suffix == ".rtfd" and item.is_dir():

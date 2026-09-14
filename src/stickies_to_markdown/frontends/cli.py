@@ -59,6 +59,13 @@ def build_parser():
     action.add_argument("--add-output", metavar="NAME=PATH", action="append", default=[],
                         help="add a mirror folder named NAME")
     action.add_argument("--remove-output", metavar="NAME", action="append", default=[])
+    action.add_argument("--add-backup", metavar="NAME=PATH", action="append", default=[],
+                        help="add a verbatim backup output (replica in PATH/Stickies_backup.noindex/<machine>)")
+    action.add_argument("--snapshot-now", action="store_true",
+                        help="write a snapshot zip for every backup output that has snapshots on")
+    action.add_argument("--restore-from", metavar="PATH",
+                        help="restore the Stickies container from a backup folder or snapshot zip "
+                             "(Stickies must be quit; a safety zip is written first; needs --yes)")
     action.add_argument("--purge-mirror", metavar="DIR",
                         help="remove every file this tool wrote into DIR (marker-checked; "
                              "lists first, deletes only with --yes)")
@@ -72,6 +79,9 @@ def build_parser():
                       help="write the macOS .app bundle (default ~/Applications)")
     inst.add_argument("--uninstall-app", action="store_true")
     inst.add_argument("--app-dir", metavar="DIR", help="bundle directory")
+    inst.add_argument("--self-sign", action="store_true",
+                      help="EXPERIMENTAL: create a self-signed Code Signing certificate in the "
+                           "login keychain and sign the bundle with it (may need your password)")
     inst.add_argument("--sign-identity", metavar="NAME",
                       help="codesign identity for --install-app (a Keychain certificate "
                            "name; '-' = ad-hoc). Remembered for later re-installs.")
@@ -105,14 +115,19 @@ def run_cli(argv):
         return 0 if uninstall_command(bin_dir=args.dir) else 1
     if args.install_app:
         from stickies_to_markdown.frontends.bundle import install_app
-        return 0 if install_app(app_dir=args.app_dir, sign_identity=args.sign_identity) else 1
+        return 0 if install_app(app_dir=args.app_dir, sign_identity=args.sign_identity,
+                                self_sign=args.self_sign) else 1
     if args.uninstall_app:
         from stickies_to_markdown.frontends.bundle import uninstall_app
         return 0 if uninstall_app(app_dir=args.app_dir) else 1
     if args.purge_mirror:
         return _purge_mirror(args.purge_mirror, args.yes)
-    if args.add_output or args.remove_output:
-        return _edit_outputs(config, args.add_output, args.remove_output)
+    if args.restore_from:
+        return _restore(config, args.restore_from, args.yes)
+    if args.snapshot_now:
+        return _snapshot_now(config)
+    if args.add_output or args.remove_output or args.add_backup:
+        return _edit_outputs(config, args.add_output, args.remove_output, args.add_backup)
     if args.set:
         return _apply_sets(config, args.set)
     if args.show_config:
@@ -300,18 +315,59 @@ def _purge_mirror(folder, confirmed):
     return 0
 
 
-def _edit_outputs(config, additions, removals):
-    for spec in additions:
+def _snapshot_now(config):
+    from stickies_to_markdown.engine.backup import BackupWriter
+    setup_logging(config)
+    events = EventQueue()
+    done = 0
+    for target in config.targets():
+        if target.type != "backup" or not target.output_dir():
+            continue
+        writer = BackupWriter(config, target, events)
+        actions = writer.maybe_snapshot(force=True)
+        print(f"{target.name}: {', '.join(actions) or 'nothing written (unavailable?)'}")
+        done += 1
+    if not done:
+        print("No backup outputs configured (see --add-backup).", file=sys.stderr)
+        return 2
+    for event in events.drain():
+        if event.kind == "error":
+            print(f"  error: '{event.path}': {event.detail}", file=sys.stderr)
+    return 0
+
+
+def _restore(config, source, confirmed):
+    from stickies_to_markdown.engine.backup import restore_container
+    setup_logging(config)
+    stickies_dir = config.stickies_dir()
+    if not confirmed:
+        print(f"This REPLACES every note in '{stickies_dir}' with the contents of\n"
+              f"'{source}'. Stickies must be quit. A zip of the current notes is written\n"
+              f"to '{config.config_dir}' first. Re-run with --yes to proceed.")
+        return 0
+    try:
+        count, safety = restore_container(source, stickies_dir, config.config_dir)
+    except RuntimeError as error:
+        print(f"Restore refused: {error}", file=sys.stderr)
+        return 1
+    print(f"Restored {count} notes. Safety copy of the previous notes: '{safety}'\n"
+          f"Launch Stickies to see them.")
+    return 0
+
+
+def _edit_outputs(config, additions, removals, backups=()):
+    for spec, kind in [(a, "markdown") for a in additions] + [(b, "backup") for b in backups]:
         name, sep, path = spec.partition("=")
         if not sep or not name.strip() or not path.strip():
-            print(f"--add-output needs NAME=PATH, got: {spec}", file=sys.stderr)
+            print(f"--add-{'backup' if kind == 'backup' else 'output'} needs NAME=PATH, got: {spec}",
+                  file=sys.stderr)
             return 2
         try:
-            config.add_target(name.strip(), path.strip())
+            target = config.add_target(name.strip(), path.strip(), type=kind)
         except ValueError as error:
             print(str(error), file=sys.stderr)
             return 2
-        print(f"Added output {name.strip()!r}: '{path.strip()}'")
+        print(f"Added {kind} output {name.strip()!r}: '{target.output_dir()}'")
     for name in removals:
         try:
             config.remove_target(name)

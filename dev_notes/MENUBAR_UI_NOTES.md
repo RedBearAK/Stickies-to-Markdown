@@ -3,7 +3,15 @@
 Lessons from the DFP menu bar work that apply directly when `menubar.py`
 comes over.
 
-## The rumps About/Help alert is NARROW
+## Update (2026-09-08): NSAlert widens to fit the longest line
+
+Observed in another rumps app: the alert's text column grows with the
+longest line, so an info-dense About works - one idea per line so a line
+never wraps mid-command. The advice below (label above command, no inline
+comments) still holds for the case where a line WOULD wrap; the constraint
+is "don't rely on wrapping", not "keep it narrow".
+
+## The rumps About/Help alert is NARROW (original note)
 
 `rumps.alert` wraps NSAlert, and NSAlert's informative-text column is
 narrow (roughly 220–260 pt of usable width, system-dependent). Long lines

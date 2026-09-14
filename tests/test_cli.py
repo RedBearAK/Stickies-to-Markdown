@@ -4,6 +4,8 @@
 import io
 import contextlib
 
+from pathlib import Path
+
 from _helpers import Sandbox, check, run_suite, notes_in
 
 from stickies_to_markdown.frontends.cli import run_cli
@@ -41,6 +43,7 @@ def test_missing_output_dir_exits_2_with_hint():
 def test_per_run_override_not_saved():
     with Sandbox() as box:
         other = box.root / "elsewhere"
+        other.mkdir()
         code, _out, _err = _run(box, "--once", "--output-dir", str(other),
                                 "--filename-style", "uuid")
         ok = check(code == 0 and len(notes_in(other / "Synced_from_Stickies")) == 7,
@@ -172,12 +175,47 @@ def test_purge_mirror_removes_only_ours():
         return ok
 
 
+def test_backup_commands():
+    import zipfile
+    with Sandbox() as box:
+        folder = box.root / "bk"
+        folder.mkdir()
+        code, out, _ = _run(box, "--add-backup", f"bk={folder}")
+        ok = check(code == 0 and "backup output 'bk'" in out and "Stickies_backup.noindex" in out,
+                   "--add-backup adds a backup block", f"rc={code} out={out!r}")
+        code, out, _ = _run(box, "--set", "bk.snapshots=true")
+        code, out, _ = _run(box, "--once")
+        box.config.reload()
+        replica = Path(box.config.target("bk").output_dir())
+        ok &= check(code == 0 and (replica / ".SavedStickiesState").is_file() and len(box.mirror_files()) == 7,
+                    "--once serves the markdown and the backup output together", f"rc={code} out={out!r}")
+        first = list(folder.glob("Stickies_backup_*.zip"))
+        ok &= check(len(first) == 1, "the first --once with snapshots on wrote the initial zip", f"{first}")
+        code, out, _ = _run(box, "--snapshot-now")
+        zips = sorted(folder.glob("Stickies_backup_*.zip"))
+        ok &= check(code == 0 and len(zips) == 2 and "wrote snapshot" in out,
+                    "--snapshot-now forces a second zip despite every_days", f"rc={code} out={out!r} zips={zips}")
+        code, out, _ = _run(box, "--restore-from", str(replica))
+        ok &= check(code == 0 and "Re-run with --yes" in out and len(list(box.container.iterdir())) == 8,
+                    "--restore-from without --yes explains and does nothing", f"{out!r}")
+        import shutil
+        shutil.rmtree(box.container / "22222222-BBBB-4BBB-8BBB-222222222222.rtfd")
+        code, out, _ = _run(box, "--restore-from", str(zips[0]), "--yes")
+        ok &= check(code == 0 and "Restored 7 notes" in out
+                    and (box.container / "22222222-BBBB-4BBB-8BBB-222222222222.rtfd" / "TXT.rtf").is_file(),
+                    "--restore-from ZIP --yes restores the deleted note", f"rc={code} out={out!r}")
+        safety = list(Path(box.config.config_dir).glob("Stickies_pre-restore_*.zip"))
+        ok &= check(len(safety) == 1 and zipfile.is_zipfile(safety[0]), "safety zip in the config dir", "")
+        return ok
+
+
 if __name__ == "__main__":
     tests = [test_once_exports_and_reports, test_missing_output_dir_exits_2_with_hint,
              test_per_run_override_not_saved, test_set_roundtrip_and_validation,
              test_show_config_lists_everything, test_dry_run_flag,
              test_error_exit_code, test_start_watches_and_stops_on_sigint,
-             test_install_flags_reach_the_writers, test_purge_mirror_removes_only_ours]
+             test_install_flags_reach_the_writers, test_purge_mirror_removes_only_ours,
+             test_backup_commands]
     exit(0 if run_suite("cli tests", tests) else 1)
 
 

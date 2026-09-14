@@ -106,21 +106,43 @@ class StickiesApp(rumps.App):
                     pass
 
     def show_about(self, _):
+        """NSAlert sizes its text column to the longest line (observed), so
+        this can be information-dense; keep one idea per line so nothing
+        wraps mid-command."""
         bring_to_front()
-        rumps.alert(
-            title="Stickies to Markdown",
-            message=("One-way mirror of Stickies into Markdown.\n"
-                     "This menu: Start/Stop and Export.\n"
-                     "Settings and logs live in the terminal.\n\n"
-                     "Settings menu:\n"
-                     "stickies2md\n\n"
-                     "Live log:\n"
-                     "stickies2md --follow-log\n\n"
-                     "Yellow icon = a problem; the status\n"
-                     "line and the log say which.\n\n"
-                     "Asked for permission at every\n"
-                     "launch? Grant the app Full Disk\n"
-                     "Access once in System Settings."))
+        cfg = self.engine.config
+        st = self.engine.status()
+        outputs = cfg.targets()
+        lines = [
+            "One-way mirror and backup of Apple Stickies. This menu: Start/Stop and Export.",
+            "Settings, logs and outputs live in the terminal:   stickies2md",
+            "",
+            f"State:     {'watching' if st.monitoring else 'stopped'}"
+            + (f", {st.notes_known} notes, {st.converted_session} converted / {st.unchanged_session} unchanged this session"
+               if st.monitoring else "")
+            + (f"   PROBLEM: {st.last_error}" if not st.healthy else ""),
+            f"Config:    {cfg.config_file}",
+            f"Log:       {cfg.get('log_file')}      (live: stickies2md --follow-log)",
+            f"Machine:   {cfg.machine_label()} / {cfg.machine_id()}",
+        ]
+        if outputs:
+            lines.append("Outputs:")
+            for t in outputs:
+                if t.type == "backup":
+                    detail = ("replica" if t.get("replica", True) else "no replica") + \
+                             (", snapshots" if t.get("snapshots") else "")
+                else:
+                    detail = f"{t.get('flavor')}, on delete {t.on_delete()}"
+                lines.append(f"   {t.name} ({t.type}, {detail}):  {t.output_dir()}")
+        else:
+            lines.append("Outputs:   none - add one:  stickies2md  >  Settings  >  Outputs  >  +")
+        lines += [
+            "",
+            "Edits in Stickies reach the mirror ~15-20 s after you stop typing.",
+            "Mirror files are read-only: edit the sticky, not the file.",
+            "Asked for permission at every launch? Grant the app Full Disk Access once (menu above).",
+        ]
+        rumps.alert(title="Stickies to Markdown", message="\n".join(lines))
 
     def toggle(self, _):
         if self.engine.status().monitoring:

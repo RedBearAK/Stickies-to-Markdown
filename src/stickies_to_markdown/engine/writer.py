@@ -181,6 +181,28 @@ class Writer:
             raise ValueError(f"output '{target.name}' has no output_dir")
         self._mirror_index = None       # uuid -> filename, lazy
         self.last_excluded = []
+        self._unavailable_reported = False
+
+    def available(self):
+        """
+        The folder the user NAMED must already exist. A missing base means
+        an unmounted volume or disconnected share: skip with one error
+        event, never makedirs it (that would plant a local folder at a
+        mount point). Only our subfolder inside an existing base is created.
+        """
+        base = self.target.base_dir()
+        if os.path.isdir(base):
+            if self._unavailable_reported:
+                self.logger.info(f"Output '{self.name}': '{base}' is back")
+                self._unavailable_reported = False
+                self._mirror_index = None       # the folder may have been replaced
+            return True
+        if not self._unavailable_reported:
+            self._unavailable_reported = True
+            message = f"output folder unavailable (not mounted?): '{base}'"
+            self.logger.error(f"Output '{self.name}': {message}")
+            self.events.put(Event("error", base, message))
+        return False
 
     @property
     def name(self):
@@ -211,6 +233,8 @@ class Writer:
         Returns the Event kind that describes what happened.
         """
         self._body_format = body_format
+        if not self.available():
+            return "error"
         os.makedirs(self.output_dir, exist_ok=True)
         markdown = self._resolve_attachment_links(note, markdown, attachments)
         taken = {name: uuid for uuid, name in self._index().items()}
@@ -255,6 +279,8 @@ class Writer:
         export. Returns a list of actions taken.
         """
         actions = []
+        if not self.available():
+            return actions
         if self.target.get("readme_note", True):
             actions += self._write_readme()
         if self.target.get("obsidian_snippet", True) and \
@@ -329,6 +355,8 @@ in a terminal.
         """
         affected = []
         self.last_excluded = []
+        if not self.available():
+            return affected
         for uuid, name in list(self._index().items()):
             if uuid in live_uuids:
                 continue

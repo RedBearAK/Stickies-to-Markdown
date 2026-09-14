@@ -262,6 +262,7 @@ def test_hot_reload_output_dir_triggers_export():
         try:
             wait_for(lambda: len(box.mirror_files()) == 7)
             other = box.root / "elsewhere"
+            other.mkdir()
             # Another process edits the config file.
             Config(config_file=box.config.config_file).set_target("default", "output_dir", str(other))
             ok = check(wait_for(engine.reload_config_if_changed, timeout=3),

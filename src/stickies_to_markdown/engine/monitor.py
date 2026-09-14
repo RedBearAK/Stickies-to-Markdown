@@ -45,8 +45,11 @@ from stickies_to_markdown.engine.processor import NoteProcessor, Counters
 
 
 WORKER_TICK = 0.25          # seconds between pending-set scans
+EXTRAS_INTERVAL = 60.0      # how often the worker lets outputs do periodic work (snapshots)
 RETRY_LIMIT = 40            # newborn/mid-save waits before giving up (~10 s)
 RECENT_ERROR_SECONDS = 300  # a conversion error keeps the icon yellow this long
+
+STATE_KEY = "__state_file__"
 
 _PACKAGE_RE = re.compile(
     r"^([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-"
@@ -66,10 +69,13 @@ class _Handler(FileSystemEventHandler):
 
     def on_any_event(self, event):
         for path in (getattr(event, "src_path", None), getattr(event, "dest_path", None)):
-            if path:
-                uuid = self.engine.uuid_for(path)
-                if uuid:
-                    self.engine.touch(uuid)
+            if not path:
+                continue
+            uuid = self.engine.uuid_for(path)
+            if uuid:
+                self.engine.touch(uuid)
+            elif os.path.basename(path) == ".SavedStickiesState" and self.engine.has_backups():
+                self.engine.touch(STATE_KEY)    # backups replicate it; Markdown ignores it
 
 
 class Engine:
@@ -241,10 +247,15 @@ class Engine:
     # --- worker thread -----------------------------------------------------
 
     def _work(self):
+        last_extras = time.time()
         while self._running:
             if self._full_export_requested:
                 self._full_export_requested = False
                 self._run_full_export()
+                last_extras = time.time()
+            if time.time() - last_extras >= EXTRAS_INTERVAL:
+                last_extras = time.time()
+                self._periodic_extras()
             for uuid in self._due():
                 if not self._running:
                     break
@@ -264,9 +275,22 @@ class Engine:
                 del self._pending[uuid]
         return sorted(due)
 
+    def has_backups(self):
+        processor = self._processor
+        return bool(processor and any(getattr(w, "target", None) and w.target.type == "backup"
+                                      for w in processor.writers))
+
     def _handle(self, uuid):
         processor = self._processor
         stickies_dir = self.config.stickies_dir()
+        if uuid == STATE_KEY:
+            for writer in processor.writers:
+                if writer.target.type == "backup":
+                    try:
+                        writer.maintain_extras()
+                    except Exception as error:      # noqa: BLE001
+                        self._set_error(f"{writer.name}: {type(error).__name__}: {error}")
+            return
         try:
             notes = stickies.enumerate_notes(stickies_dir, self.logger)
         except OSError as error:
@@ -302,6 +326,18 @@ class Engine:
             removed = writer.handle_deletions(set(notes) - {uuid}, {uuid})
             self.counters.bump("excluded", len(removed))
         self._last_export_ts = time.time()
+
+    def _periodic_extras(self):
+        """Time-based work: snapshot due dates, readme refresh, an
+        unavailable volume coming back. Never touches note conversion."""
+        processor = self._processor
+        if processor is None:
+            return
+        for writer in processor.writers:
+            try:
+                writer.maintain_extras()
+            except Exception as error:      # noqa: BLE001
+                self._set_error(f"{writer.name}: {type(error).__name__}: {error}")
 
     def _run_full_export(self):
         self._processor.export_all()

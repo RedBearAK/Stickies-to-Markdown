@@ -148,6 +148,49 @@ write is never touched, and the tool's own copy is refreshed when its
 built-in version changes. `obsidian_snippet: false` on the output turns
 this off. The floating-window plugins above color only their own windows.
 
+## Backups: a restorable copy, not just a mirror
+
+The Markdown mirror is lossy by design. The `.rtfd` packages plus
+`.SavedStickiesState` are the only lossless form of your notes, and
+Stickies keeps no history and does not sync. A **backup output** keeps a
+verbatim, restorable copy:
+
+```
+stickies2md --add-backup safe=~/Dropbox/Backups      # replica in .../Stickies_backup.noindex/<machine>/
+stickies2md --set safe.snapshots=true                # plus a zip at most every 30 days
+stickies2md --set safe.replica=false                 # ...or ONLY the zips (text-only notes)
+stickies2md --snapshot-now                           # a zip right now
+```
+
+- **Replica** (default on): every package byte-for-byte, mtimes preserved,
+  plus the state file. One file changes per edit, so a Dropbox or iCloud
+  folder syncs deltas only and adds its own version history for free. A
+  note deleted in Stickies moves to `_deleted/<date-time>/` in the replica
+  and is pruned after `keep_deleted_days` (30). The folder name ends in
+  `.noindex` so Spotlight skips the whole subtree; the replica carries a
+  note explaining what it is and how to restore.
+- **Snapshots** (default off): `Stickies_backup_<machine>_<date-time>.zip`
+  in the folder you named (`snapshot_dir` to change), written at most every
+  `snapshot_every_days` (30), only when the notes changed since the last
+  one and after `snapshot_quiet_seconds` (300) of no edits; pruned to the
+  newest `keep_snapshots` (0 = keep all). Images are stored uncompressed
+  inside the zip, text is deflated. Pruning touches only zips matching the
+  tool's name pattern *and* carrying its marker in the zip comment. Mind
+  the size if you have many attachments — a zip re-uploads in full.
+- **Restore**: `stickies2md --restore-from PATH --yes`, where PATH is a
+  replica folder or a snapshot zip. It refuses while Stickies is running,
+  writes a zip of the current notes into the config folder first, then
+  replaces the container's packages and state file. Launch Stickies to
+  see the result. *(Whether Stickies adopts a restored package that is
+  absent from the restored state file is on the Mac verification list.)*
+
+**If the output location is a mounted drive or share:** the tool never
+creates the folder you named. A missing folder is treated as "not
+mounted" — one error in the log, the icon goes yellow, nothing is written,
+and nothing is created at the mount point — and work resumes on its own
+when the folder reappears. Other outputs continue meanwhile. (Creating the
+folder at configuration time is offered by the menu, on purpose, once.)
+
 ## The folder explains itself
 
 Every mirror folder gets a first-sorted note,
@@ -254,6 +297,7 @@ into a single block named `default` the first time it is read.
 | output key | default | meaning |
 | --- | --- | --- |
 | `name` | — | handle for `--set NAME.KEY` and the menu |
+| `type` | `markdown` | or `backup` (keys below marked *backup* apply only then) |
 | `output_dir` | — | the folder the mirror is created inside |
 | `subfolder` | `Synced_from_Stickies` | mirror folder name inside `output_dir`; blank = none |
 | `flavor` | `generic` | one or more flavors, comma-separated (see The output format) |
@@ -268,6 +312,12 @@ into a single block named `default` the first time it is read.
 | `front_matter` | `true` | write the YAML block |
 | `readme_note` | `true` | maintain the first-sorted "read-only mirror" note |
 | `obsidian_snippet` | `true` | with the `obsidian` flavor: install/enable the vault CSS snippet |
+| `replica` *backup* | `true` | keep the verbatim replica tree |
+| `keep_deleted_days` *backup* | `30` | prune tombstoned packages after this (0 = never) |
+| `snapshots` *backup* | `false` | write timestamped zips |
+| `snapshot_every_days` / `snapshot_quiet_seconds` *backup* | `30` / `300` | when a zip may be written |
+| `keep_snapshots` *backup* | `0` | prune to the newest N (0 = all) |
+| `snapshot_dir` *backup* | *(the named folder)* | where zips go |
 
 ### When a note is deleted in Stickies
 
